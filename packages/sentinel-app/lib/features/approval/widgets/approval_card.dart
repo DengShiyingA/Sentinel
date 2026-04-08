@@ -11,12 +11,15 @@ class ApprovalCard extends StatelessWidget {
   final ApprovalRequest request;
   final VoidCallback onAllow;
   final VoidCallback onBlock;
+  /// 多选模式下未选中的卡片半透明
+  final bool dimmed;
 
   const ApprovalCard({
     super.key,
     required this.request,
     required this.onAllow,
     required this.onBlock,
+    this.dimmed = false,
   });
 
   @override
@@ -24,7 +27,10 @@ class ApprovalCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isHighRisk = request.riskLevel == RiskLevel.requireFaceID;
 
-    return Card(
+    return AnimatedOpacity(
+      opacity: dimmed ? 0.4 : 1.0,
+      duration: const Duration(milliseconds: 200),
+      child: Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -158,7 +164,7 @@ class ApprovalCard extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 
   /// 允许操作 — 高风险自动触发生物识别
