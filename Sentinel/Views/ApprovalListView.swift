@@ -111,7 +111,6 @@ struct DashboardView: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                 }
-                .background(.black)
                 .onChange(of: store.terminalLines.count) { _, _ in
                     if let last = store.terminalLines.last {
                         withAnimation(.easeOut(duration: 0.15)) {
@@ -122,14 +121,13 @@ struct DashboardView: View {
             }
 
             if store.terminalLines.isEmpty {
-                Spacer()
-                Text(String(localized: "等待 Claude Code 输出..."))
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.green.opacity(0.4))
-                Spacer()
+                ContentUnavailableView {
+                    Label(String(localized: "等待输出"), systemImage: "terminal")
+                } description: {
+                    Text(String(localized: "Claude Code 的终端输出会显示在这里"))
+                }
             }
         }
-        .background(.black)
     }
 
     // MARK: - History (Activity Feed)

@@ -1,7 +1,5 @@
 import SwiftUI
 
-// MARK: - Terminal Line Model
-
 struct TerminalLine: Identifiable {
     let id: String
     let text: String
@@ -14,11 +12,11 @@ struct TerminalLine: Identifiable {
 
     var color: Color {
         switch type {
-        case .normal:  .green
+        case .normal:  .primary
         case .success: .green
         case .error:   .red
-        case .info:    .yellow
-        case .tool:    .cyan
+        case .info:    .orange
+        case .tool:    .blue
         }
     }
 
@@ -34,8 +32,6 @@ struct TerminalLine: Identifiable {
     }
 }
 
-// MARK: - Terminal Line View
-
 struct TerminalLineView: View {
     let line: TerminalLine
 
@@ -43,7 +39,7 @@ struct TerminalLineView: View {
         HStack(alignment: .top, spacing: 6) {
             Text(line.timestamp, format: .dateTime.hour().minute().second())
                 .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.green.opacity(0.3))
+                .foregroundStyle(.secondary)
                 .frame(width: 55, alignment: .leading)
 
             Text(line.text)
