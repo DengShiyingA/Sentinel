@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/transport/connection_provider.dart';
 import '../../../shared/models/approval_request.dart';
+import '../../../shared/models/activity_item.dart';
 import '../widgets/approval_card.dart';
 
-/// Main dashboard: segmented tabs for Pending / Terminal / History
+/// 主仪表板：分段 Tab 切换 待审批 / 终端 / 历史
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
 
@@ -37,7 +38,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       appBar: AppBar(
         title: const Text('Sentinel'),
         actions: [
-          // Connection indicator
+          // 连接状态指示器
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Row(
@@ -80,7 +81,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 }
 
-// ==================== Pending Tab ====================
+// ==================== 待审批 Tab ====================
 
 class _PendingTab extends StatelessWidget {
   final ConnectionNotifier notifier;
@@ -88,26 +89,31 @@ class _PendingTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (notifier.pendingRequests.isEmpty) {
-      return const Center(
+    final requests = notifier.pendingRequests;
+
+    if (requests.isEmpty) {
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.shield_outlined, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('没有待审批的请求', style: TextStyle(fontSize: 16)),
-            SizedBox(height: 8),
+            Icon(Icons.shield_outlined, size: 72,
+                color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 16),
+            Text('没有待审批的请求',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
             Text('Claude Code 的工具调用会出现在这里',
-                style: TextStyle(color: Colors.grey)),
+                style: TextStyle(color: Theme.of(context).colorScheme.outline)),
           ],
         ),
       );
     }
 
     return ListView.builder(
-      itemCount: notifier.pendingRequests.length,
+      padding: const EdgeInsets.only(top: 8),
+      itemCount: requests.length,
       itemBuilder: (context, index) {
-        final request = notifier.pendingRequests[index];
+        final request = requests[index];
         return ApprovalCard(
           request: request,
           onAllow: () => notifier.sendDecision(request.id, Decision.allowed),
@@ -118,7 +124,7 @@ class _PendingTab extends StatelessWidget {
   }
 }
 
-// ==================== Terminal Tab ====================
+// ==================== 终端 Tab ====================
 
 class _TerminalTab extends StatelessWidget {
   final ConnectionNotifier notifier;
@@ -126,50 +132,54 @@ class _TerminalTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (notifier.terminalLines.isEmpty) {
-      return const Center(
+    final lines = notifier.terminalLines;
+
+    if (lines.isEmpty) {
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.terminal, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('等待输出'),
-            SizedBox(height: 8),
+            Icon(Icons.terminal, size: 72,
+                color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 16),
+            Text('等待输出',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
             Text('Claude Code 的终端输出会显示在这里',
-                style: TextStyle(color: Colors.grey)),
+                style: TextStyle(color: Theme.of(context).colorScheme.outline)),
           ],
         ),
       );
     }
 
     return ListView.builder(
-      reverse: false,
-      itemCount: notifier.terminalLines.length,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      itemCount: lines.length,
       itemBuilder: (context, index) {
-        final line = notifier.terminalLines[index];
+        final line = lines[index];
         return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+          padding: const EdgeInsets.symmetric(vertical: 1),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // 时间戳
               Text(
-                '${line.timestamp.hour.toString().padLeft(2, '0')}'
-                ':${line.timestamp.minute.toString().padLeft(2, '0')}'
-                ':${line.timestamp.second.toString().padLeft(2, '0')}',
+                _formatTime(line.timestamp),
                 style: TextStyle(
                   fontSize: 10,
                   fontFamily: 'monospace',
-                  color: Colors.grey.shade400,
+                  color: Theme.of(context).colorScheme.outline,
                 ),
               ),
               const SizedBox(width: 6),
+              // 内容
               Expanded(
                 child: SelectableText(
                   line.text,
                   style: TextStyle(
                     fontSize: 13,
                     fontFamily: 'monospace',
-                    color: _lineColor(line.text),
+                    color: _lineColor(context, line.text),
                   ),
                 ),
               ),
@@ -180,16 +190,22 @@ class _TerminalTab extends StatelessWidget {
     );
   }
 
-  Color _lineColor(String text) {
+  String _formatTime(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}'
+      ':${t.minute.toString().padLeft(2, '0')}'
+      ':${t.second.toString().padLeft(2, '0')}';
+
+  /// 根据前缀返回语义色（适配深色模式）
+  Color _lineColor(BuildContext context, String text) {
     if (text.startsWith('✅')) return Colors.green;
     if (text.startsWith('❌')) return Colors.red;
     if (text.startsWith('📢')) return Colors.orange;
-    if (text.startsWith('[')) return Colors.blue;
-    return Colors.grey.shade800;
+    if (text.startsWith('[')) return Theme.of(context).colorScheme.primary;
+    return Theme.of(context).colorScheme.onSurface;
   }
 }
 
-// ==================== History Tab ====================
+// ==================== 历史 Tab ====================
 
 class _HistoryTab extends StatelessWidget {
   final ConnectionNotifier notifier;
@@ -197,30 +213,36 @@ class _HistoryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (notifier.activityFeed.isEmpty) {
-      return const Center(
+    final feed = notifier.activityFeed;
+
+    if (feed.isEmpty) {
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.history, size: 64, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('暂无活动'),
+            Icon(Icons.history, size: 72,
+                color: Theme.of(context).colorScheme.outline),
+            const SizedBox(height: 16),
+            Text('暂无活动',
+                style: Theme.of(context).textTheme.titleMedium),
           ],
         ),
       );
     }
 
     return ListView.builder(
-      itemCount: notifier.activityFeed.length,
+      itemCount: feed.length,
       itemBuilder: (context, index) {
-        final item = notifier.activityFeed[index];
+        final item = feed[index];
         return ListTile(
-          leading: Icon(_activityIcon(item), color: _activityColor(item)),
-          title: Text(item.summary, maxLines: 2, overflow: TextOverflow.ellipsis),
+          leading: Icon(
+            _iconForType(item.type, item.isError),
+            color: _colorForType(item.type, item.isError),
+          ),
+          title: Text(item.summary,
+              maxLines: 2, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            '${item.toolName ?? item.type.value} · '
-            '${item.timestamp.hour.toString().padLeft(2, '0')}'
-            ':${item.timestamp.minute.toString().padLeft(2, '0')}',
+            '${item.toolName ?? item.type.value} · ${_formatTime(item.timestamp)}',
             style: const TextStyle(fontSize: 12),
           ),
           dense: true,
@@ -229,25 +251,34 @@ class _HistoryTab extends StatelessWidget {
     );
   }
 
-  IconData _activityIcon(dynamic item) {
-    switch (item.type) {
-      case ActivityType.toolCompleted: return Icons.check_circle_outline;
-      case ActivityType.notification: return Icons.notifications_outlined;
-      case ActivityType.stop: return item.isError ? Icons.error_outline : Icons.flag;
-      case ActivityType.userMessage: return Icons.chat_bubble_outline;
-      case ActivityType.claudeResponse: return Icons.smart_toy;
-      default: return Icons.circle_outlined;
-    }
+  String _formatTime(DateTime t) =>
+      '${t.hour.toString().padLeft(2, '0')}'
+      ':${t.minute.toString().padLeft(2, '0')}';
+
+  /// 活动类型 → 图标（普通函数，不是 switch 常量）
+  IconData _iconForType(ActivityType type, bool isError) {
+    if (type == ActivityType.toolCompleted) return Icons.check_circle_outline;
+    if (type == ActivityType.notification) return Icons.notifications_outlined;
+    if (type == ActivityType.stop) return isError ? Icons.error_outline : Icons.flag;
+    if (type == ActivityType.taskCompleted) return Icons.done_all;
+    if (type == ActivityType.sessionEnded) return Icons.logout;
+    if (type == ActivityType.userMessage) return Icons.chat_bubble_outline;
+    if (type == ActivityType.claudeResponse) return Icons.smart_toy;
+    if (type == ActivityType.claudeStatus) return Icons.hourglass_top;
+    if (type == ActivityType.terminal) return Icons.terminal;
+    return Icons.circle_outlined;
   }
 
-  Color _activityColor(dynamic item) {
-    switch (item.type) {
-      case ActivityType.toolCompleted: return Colors.blue;
-      case ActivityType.notification: return Colors.orange;
-      case ActivityType.stop: return item.isError ? Colors.red : Colors.green;
-      case ActivityType.userMessage: return Colors.blue;
-      case ActivityType.claudeResponse: return Colors.purple;
-      default: return Colors.grey;
-    }
+  /// 活动类型 → 颜色
+  Color _colorForType(ActivityType type, bool isError) {
+    if (type == ActivityType.toolCompleted) return Colors.blue;
+    if (type == ActivityType.notification) return Colors.orange;
+    if (type == ActivityType.stop) return isError ? Colors.red : Colors.green;
+    if (type == ActivityType.taskCompleted) return Colors.green;
+    if (type == ActivityType.sessionEnded) return Colors.grey;
+    if (type == ActivityType.userMessage) return Colors.blue;
+    if (type == ActivityType.claudeResponse) return Colors.purple;
+    if (type == ActivityType.claudeStatus) return Colors.grey;
+    return Colors.grey;
   }
 }

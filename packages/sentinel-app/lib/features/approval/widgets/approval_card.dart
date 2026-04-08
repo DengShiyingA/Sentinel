@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../../shared/models/approval_request.dart';
 
+/// 审批请求卡片 — 显示风险等级、工具信息、倒计时、操作按钮
 class ApprovalCard extends StatelessWidget {
   final ApprovalRequest request;
   final VoidCallback onAllow;
@@ -15,68 +17,129 @@ class ApprovalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isHighRisk = request.riskLevel == RiskLevel.requireFaceID;
     final theme = Theme.of(context);
+    final isHighRisk = request.riskLevel == RiskLevel.requireFaceID;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Risk banner
+          // ========== 风险横幅 ==========
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: isHighRisk
-                  ? Colors.red.withValues(alpha: 0.1)
-                  : Colors.orange.withValues(alpha: 0.1),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                  ? theme.colorScheme.errorContainer
+                  : Colors.orange.shade50,
             ),
             child: Row(
               children: [
-                Icon(
-                  isHighRisk ? Icons.warning_amber : Icons.help_outline,
-                  color: isHighRisk ? Colors.red : Colors.orange,
+                // 风险图标
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    color: isHighRisk
+                        ? theme.colorScheme.error.withValues(alpha: 0.15)
+                        : Colors.orange.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    _toolIcon(request.toolName),
+                    color: isHighRisk ? theme.colorScheme.error : Colors.orange,
+                  ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
+
+                // 工具名 + 路径
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(request.toolName,
-                          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-                      if (_filePath != null)
-                        Text(_filePath!,
-                            style: theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace'),
-                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Row(
+                        children: [
+                          Text(request.toolName,
+                              style: theme.textTheme.titleSmall
+                                  ?.copyWith(fontWeight: FontWeight.bold)),
+                          const SizedBox(width: 8),
+                          // 风险标签
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: isHighRisk
+                                  ? theme.colorScheme.error
+                                  : Colors.orange,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              isHighRisk ? 'Face ID' : '需确认',
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_filePath != null) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          _filePath!,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontFamily: 'monospace',
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                // Countdown
-                _CountdownChip(timeoutAt: request.timeoutAt),
+
+                // 倒计时
+                _CountdownRing(timeoutAt: request.timeoutAt),
               ],
             ),
           ),
 
-          // Actions
+          // ========== AI 意图摘要 ==========
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+            child: Text(
+              _intentSummary,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+
+          // ========== 操作按钮 ==========
           Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
+                // 拒绝
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: onBlock,
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close, size: 18),
                     label: const Text('拒绝'),
-                    style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: theme.colorScheme.error,
+                      side: BorderSide(color: theme.colorScheme.error.withValues(alpha: 0.5)),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
+                // 允许
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: onAllow,
-                    icon: Icon(isHighRisk ? Icons.fingerprint : Icons.check),
+                    icon: Icon(isHighRisk ? Icons.fingerprint : Icons.check, size: 18),
                     label: const Text('允许'),
                   ),
                 ),
@@ -88,32 +151,94 @@ class ApprovalCard extends StatelessWidget {
     );
   }
 
+  /// 工具名 → 文件路径
   String? get _filePath =>
       request.toolInput['file_path'] as String? ??
       request.toolInput['command'] as String? ??
       request.toolInput['path'] as String?;
+
+  /// 生成 AI 意图摘要
+  String get _intentSummary {
+    final tool = request.toolName.toLowerCase();
+    final path = _filePath ?? '';
+    if (tool.contains('write')) return 'Claude 想写入文件 $path';
+    if (tool.contains('edit')) return 'Claude 想编辑文件 $path';
+    if (tool.contains('bash')) return 'Claude 想执行命令: $path';
+    if (tool.contains('read')) return 'Claude 想读取文件 $path';
+    if (tool.contains('delete')) return 'Claude 想删除 $path';
+    return 'Claude 想调用 ${request.toolName}';
+  }
+
+  /// 工具名 → 图标
+  IconData _toolIcon(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('write') || n.contains('edit')) return Icons.edit_document;
+    if (n.contains('bash') || n.contains('terminal')) return Icons.terminal;
+    if (n.contains('read')) return Icons.description;
+    if (n.contains('delete') || n.contains('rm')) return Icons.delete_outline;
+    if (n.contains('grep') || n.contains('glob')) return Icons.search;
+    return Icons.build_outlined;
+  }
 }
 
-class _CountdownChip extends StatelessWidget {
+/// 倒计时圆环 — 120s → 0
+class _CountdownRing extends StatefulWidget {
   final DateTime timeoutAt;
-  const _CountdownChip({required this.timeoutAt});
+  const _CountdownRing({required this.timeoutAt});
+
+  @override
+  State<_CountdownRing> createState() => _CountdownRingState();
+}
+
+class _CountdownRingState extends State<_CountdownRing> {
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder(
-      stream: Stream.periodic(const Duration(seconds: 1)),
-      builder: (context, _) {
-        final remaining = timeoutAt.difference(DateTime.now()).inSeconds;
-        final secs = remaining.clamp(0, 999);
-        return Chip(
-          label: Text('${secs}s',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: secs < 30 ? Colors.red : null,
-              )),
-          visualDensity: VisualDensity.compact,
-        );
-      },
+    final remaining = widget.timeoutAt.difference(DateTime.now()).inSeconds;
+    final secs = remaining.clamp(0, 120);
+    final progress = secs / 120.0;
+    final color = secs > 60
+        ? Colors.green
+        : secs > 30
+            ? Colors.orange
+            : Colors.red;
+
+    return SizedBox(
+      width: 48, height: 48,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CircularProgressIndicator(
+            value: progress,
+            strokeWidth: 3,
+            backgroundColor: color.withValues(alpha: 0.15),
+            valueColor: AlwaysStoppedAnimation(color),
+          ),
+          Text(
+            '$secs',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
