@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/transport/connection_provider.dart';
 import '../../../shared/models/approval_request.dart';
 import '../../../shared/models/activity_item.dart';
+import '../../../core/trust/temporary_trust.dart';
 import '../widgets/approval_card.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -194,6 +195,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                           request: req,
                           onAllow: () => _handleDecision(req.id, Decision.allowed),
                           onBlock: () => _handleDecision(req.id, Decision.blocked),
+                          onTrust: (tool, prefix, dur) {
+                            ref.read(trustProvider.notifier).addRule(
+                              toolName: tool,
+                              pathPrefix: prefix,
+                              duration: dur,
+                            );
+                          },
                         ),
                 ),
               ],

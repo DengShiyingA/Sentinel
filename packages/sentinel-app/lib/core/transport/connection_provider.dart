@@ -5,6 +5,7 @@ import 'transport.dart';
 import 'lan_transport.dart';
 import '../../shared/models/approval_request.dart';
 import '../../shared/models/activity_item.dart';
+import '../trust/temporary_trust.dart';
 
 /// 连接状态枚举
 enum ConnStatus { disconnected, connecting, connected, error }
@@ -164,9 +165,20 @@ class SentinelNotifier extends Notifier<SentinelState> {
   // ==================== 回调绑定 ====================
 
   void _wireCallbacks(Transport t) {
-    // 收到审批请求
+    // 收到审批请求 — 先检查临时信任，命中则自动允许
     t.onRequest = (request) {
       if (state.pendingRequests.any((r) => r.id == request.id)) return;
+
+      // 检查临时信任规则
+      final trust = ref.read(trustProvider.notifier);
+      if (trust.checkAndAutoAllow(request)) {
+        // 自动发送允许决策，不显示卡片
+        _transport?.sendDecision(request.id, Decision.allowed);
+        state = state.copyWith(resolvedCount: state.resolvedCount + 1);
+        debugPrint('[Provider] Auto-allowed by trust rule: ${request.toolName}');
+        return;
+      }
+
       state = state.copyWith(
         pendingRequests: [request, ...state.pendingRequests],
       );

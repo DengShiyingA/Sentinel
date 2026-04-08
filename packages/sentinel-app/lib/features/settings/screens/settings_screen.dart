@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/transport/connection_provider.dart';
 import '../../../core/transport/transport.dart';
+import '../../../core/trust/temporary_trust.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -149,6 +150,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 12),
           ],
 
+          // ========== 临时信任规则 ==========
+          _TrustRulesSection(),
+
           // ========== 统计 ==========
           const Divider(),
           ListTile(
@@ -255,5 +259,60 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (s == ConnStatus.connecting) return '连接中...';
     if (s == ConnStatus.error) return '连接失败';
     return '未连接';
+  }
+}
+
+/// 临时信任规则列表（设置页嵌入）
+class _TrustRulesSection extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final trust = ref.watch(trustProvider);
+    final active = trust.activeRules;
+
+    if (active.isEmpty && trust.autoAllowedCount == 0) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Row(
+            children: [
+              Icon(Icons.shield_outlined, size: 16,
+                  color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
+              Text('临时信任', style: Theme.of(context).textTheme.titleSmall),
+              const Spacer(),
+              if (active.isNotEmpty)
+                TextButton(
+                  onPressed: () => ref.read(trustProvider.notifier).clearAll(),
+                  child: const Text('全部清除', style: TextStyle(fontSize: 12)),
+                ),
+            ],
+          ),
+        ),
+        if (trust.autoAllowedCount > 0)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text('已自动允许 ${trust.autoAllowedCount} 项',
+                style: TextStyle(fontSize: 12,
+                    color: Theme.of(context).colorScheme.outline)),
+          ),
+        ...active.map((rule) => ListTile(
+          leading: const Icon(Icons.timer_outlined, size: 20),
+          title: Text(rule.label, style: const TextStyle(fontSize: 14)),
+          subtitle: Text('剩余 ${rule.remainingSeconds ~/ 60} 分钟',
+              style: const TextStyle(fontSize: 12)),
+          trailing: IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: () => ref.read(trustProvider.notifier).removeRule(rule.id),
+          ),
+          dense: true,
+        )),
+      ],
+    );
   }
 }

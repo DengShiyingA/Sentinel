@@ -13,6 +13,8 @@ class ApprovalCard extends StatelessWidget {
   final VoidCallback onBlock;
   /// 多选模式下未选中的卡片半透明
   final bool dimmed;
+  /// 临时信任回调（toolName, pathPrefix, duration）
+  final void Function(String tool, String? pathPrefix, Duration dur)? onTrust;
 
   const ApprovalCard({
     super.key,
@@ -20,6 +22,7 @@ class ApprovalCard extends StatelessWidget {
     required this.onAllow,
     required this.onBlock,
     this.dimmed = false,
+    this.onTrust,
   });
 
   @override
@@ -132,7 +135,7 @@ class ApprovalCard extends StatelessWidget {
 
           // ========== 操作按钮 ==========
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
             child: Row(
               children: [
                 // 拒绝
@@ -150,8 +153,8 @@ class ApprovalCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                // 允许（高风险需生物识别）
+                const SizedBox(width: 8),
+                // 允许
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: () => _handleAllow(context, isHighRisk),
@@ -162,6 +165,17 @@ class ApprovalCard extends StatelessWidget {
               ],
             ),
           ),
+          // ========== 信任菜单（非高风险时显示）==========
+          if (onTrust != null && !isHighRisk)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+              child: _TrustMenu(
+                toolName: request.toolName,
+                filePath: _filePath,
+                onTrust: onTrust!,
+                onAllow: onAllow,
+              ),
+            ),
         ],
       ),
     ));
@@ -276,4 +290,118 @@ class _CountdownRingState extends State<_CountdownRing> {
       ),
     );
   }
+}
+
+/// "允许并信任" 下拉菜单
+class _TrustMenu extends StatelessWidget {
+  final String toolName;
+  final String? filePath;
+  final void Function(String tool, String? pathPrefix, Duration dur) onTrust;
+  final VoidCallback onAllow;
+
+  const _TrustMenu({
+    required this.toolName,
+    this.filePath,
+    required this.onTrust,
+    required this.onAllow,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // 提取路径前缀（如 /src/components/ → /src/components/）
+    final prefix = _extractPrefix(filePath);
+
+    return PopupMenuButton<_TrustOption>(
+      onSelected: (option) {
+        // 先允许当前请求
+        onAllow();
+        // 添加临时信任规则
+        onTrust(
+          option.matchAll ? '*' : toolName,
+          option.matchPath ? prefix : null,
+          option.duration,
+        );
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('已信任: ${option.label}'),
+          backgroundColor: Colors.blue,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+      },
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          value: _TrustOption('$toolName 5分钟', const Duration(minutes: 5)),
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.timer, size: 18),
+            title: Text('信任 $toolName 5 分钟'),
+          ),
+        ),
+        PopupMenuItem(
+          value: _TrustOption('$toolName 15分钟', const Duration(minutes: 15)),
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.timer, size: 18),
+            title: Text('信任 $toolName 15 分钟'),
+          ),
+        ),
+        PopupMenuItem(
+          value: _TrustOption('$toolName 30分钟', const Duration(minutes: 30)),
+          child: ListTile(
+            dense: true,
+            leading: const Icon(Icons.timer, size: 18),
+            title: Text('信任 $toolName 30 分钟'),
+          ),
+        ),
+        if (prefix != null)
+          PopupMenuItem(
+            value: _TrustOption('$toolName $prefix* 15分钟', const Duration(minutes: 15), matchPath: true),
+            child: ListTile(
+              dense: true,
+              leading: const Icon(Icons.folder_open, size: 18),
+              title: Text('信任 $prefix* 15 分钟'),
+              subtitle: Text('仅 $toolName', style: const TextStyle(fontSize: 11)),
+            ),
+          ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: _TrustOption('全部工具 5分钟', const Duration(minutes: 5), matchAll: true),
+          child: const ListTile(
+            dense: true,
+            leading: Icon(Icons.security, size: 18),
+            title: Text('信任全部工具 5 分钟'),
+            subtitle: Text('仅限低风险操作', style: TextStyle(fontSize: 11)),
+          ),
+        ),
+      ],
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.shield_outlined, size: 14,
+              color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 4),
+          Text('允许并信任...',
+              style: TextStyle(fontSize: 12,
+                  color: Theme.of(context).colorScheme.primary)),
+        ],
+      ),
+    );
+  }
+
+  /// 提取目录前缀（/src/utils/helper.ts → /src/utils/）
+  String? _extractPrefix(String? path) {
+    if (path == null || !path.contains('/')) return null;
+    final lastSlash = path.lastIndexOf('/');
+    return path.substring(0, lastSlash + 1);
+  }
+}
+
+class _TrustOption {
+  final String label;
+  final Duration duration;
+  final bool matchPath;
+  final bool matchAll;
+
+  _TrustOption(this.label, this.duration, {this.matchPath = false, this.matchAll = false});
 }
