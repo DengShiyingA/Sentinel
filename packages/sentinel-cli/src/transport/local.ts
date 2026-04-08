@@ -7,6 +7,7 @@ import { pending } from '../relay/pending';
 import { log } from '../lib/logger';
 import { networkInterfaces } from 'os';
 import type { Rule } from '../rules/engine';
+import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
 
 const TCP_PORT = 7750;
 const SERVICE_TYPE = 'sentinel';
@@ -84,7 +85,7 @@ export class LocalTransport implements Transport {
       type: SERVICE_TYPE,
       protocol: PROTOCOL,
       port: TCP_PORT,
-      txt: { version: '1' },
+      txt: { version: '2', ek: getTransportKeyBase64() }, // ek = encryption key
     });
     log.success(`[local] Bonjour: publishing _${SERVICE_TYPE}._${PROTOCOL}`);
 
@@ -92,18 +93,28 @@ export class LocalTransport implements Transport {
     if (ip) log.info(`[local] LAN address: ${ip}:${TCP_PORT}`);
   }
 
-  /** Process newline-delimited JSON from buffer */
+  /** Process newline-delimited messages from buffer (encrypted or plain) */
   private processBuffer(): void {
     const lines = this.buffer.split('\n');
     this.buffer = lines.pop() ?? '';
+    const key = getTransportKey();
 
     for (const line of lines) {
       if (!line.trim()) continue;
       try {
-        const msg = JSON.parse(line);
+        // Try decrypt first (encrypted messages are base64, not JSON)
+        let json: string;
+        if (line.startsWith('{')) {
+          json = line; // Plain JSON fallback (handshake)
+        } else {
+          const decrypted = decryptMessage(line, key);
+          if (!decrypted) { log.debug('[local] Decrypt failed'); continue; }
+          json = decrypted;
+        }
+        const msg = JSON.parse(json);
         this.handleMessage(msg);
       } catch {
-        log.debug(`[local] Invalid JSON: ${line.slice(0, 80)}`);
+        log.debug(`[local] Parse error: ${line.slice(0, 40)}`);
       }
     }
   }
@@ -193,11 +204,12 @@ export class LocalTransport implements Transport {
     });
   }
 
-  /** Send a JSON message to connected iOS */
+  /** Send an encrypted JSON message to connected iOS */
   private send(event: string, data: any): void {
     if (!this.iosSocket || this.iosSocket.destroyed) return;
-    const msg = JSON.stringify({ event, data }) + '\n';
-    this.iosSocket.write(msg);
+    const json = JSON.stringify({ event, data });
+    const encrypted = encryptMessage(json, getTransportKey());
+    this.iosSocket.write(encrypted + '\n');
   }
 
   async sendApprovalRequest(payload: ApprovalPayload): Promise<string> {

@@ -16,7 +16,9 @@ import { getHistory, getTodayStats } from '../lib/history';
 import { setBudgetLimit, getBudgetStatus, isOverBudget } from '../lib/budget';
 import { setBlockAll, setAllowAll, getOverrideInfo, getOverrideState } from '../lib/overrides';
 import { runDoctor } from '../lib/doctor';
-import { daemonStart, daemonStop, daemonStatus, daemonRestart } from '../lib/daemon';
+import { daemonStart, daemonStop, daemonStatus, daemonRestart, daemonInstallLaunchd } from '../lib/daemon';
+import { getMode, setMode, getModeInfo, ALL_MODES, MODE_DESCRIPTIONS, type PermissionMode } from '../lib/modes';
+import { listSessions } from '../lib/session';
 import { log } from '../lib/logger';
 
 const program = new Command();
@@ -432,6 +434,45 @@ test.command('rules').description('测试规则匹配').action(() => {
   console.log('');
 });
 
+// ==================== sentinel sessions ====================
+
+program.command('sessions').description('查看会话历史').action(() => {
+  const sessions = listSessions(10);
+  console.log(chalk.bold('\n  📁 Recent Sessions\n'));
+  if (sessions.length === 0) { log.dim('No sessions yet.'); console.log(''); return; }
+  for (const s of sessions) {
+    const date = new Date(s.startedAt).toLocaleString();
+    console.log(`  ${chalk.dim(date)}  ${chalk.cyan(`${s.events} events`)}  ${chalk.green(`✓${s.stats.approved}`)} ${chalk.red(`✗${s.stats.blocked}`)}`);
+  }
+  console.log('');
+});
+
+// ==================== sentinel mode ====================
+
+program.command('mode [name]').description('查看或切换权限模式')
+  .action((name?: string) => {
+    if (!name) {
+      const info = getModeInfo();
+      console.log(chalk.bold('\n  🎛  Permission Mode\n'));
+      console.log(`  Current: ${chalk.cyan.bold(info.mode)}`);
+      console.log(`  Changed: ${new Date(info.changedAt).toLocaleString()}\n`);
+      for (const m of ALL_MODES) {
+        const marker = m === info.mode ? chalk.cyan('▸') : ' ';
+        const label = m === info.mode ? chalk.cyan.bold(m.padEnd(10)) : m.padEnd(10);
+        console.log(`  ${marker} ${label} ${chalk.dim(MODE_DESCRIPTIONS[m])}`);
+      }
+      console.log(`\n  ${chalk.dim('Usage: sentinel mode <strict|relaxed|yolo|plan|lockdown>')}\n`);
+      return;
+    }
+    if (!ALL_MODES.includes(name as PermissionMode)) {
+      log.error(`Invalid mode: ${name}. Use: ${ALL_MODES.join(', ')}`);
+      process.exit(1);
+    }
+    setMode(name as PermissionMode);
+    log.success(`Mode set to: ${name}`);
+    log.dim(`  ${MODE_DESCRIPTIONS[name as PermissionMode]}`);
+  });
+
 // ==================== sentinel doctor ====================
 
 program.command('doctor').description('系统诊断').action(async () => {
@@ -497,6 +538,13 @@ daemon.command('restart').description('重启后台服务')
   .option('-s, --server <url>', '服务器地址')
   .action((opts) => {
     daemonRestart(opts.mode, parseInt(opts.port, 10), opts.server);
+  });
+
+daemon.command('autostart').description('安装 macOS 开机自启（launchd）')
+  .option('-m, --mode <mode>', '连接模式', 'local')
+  .option('-p, --port <port>', 'HTTP hook 端口', '7749')
+  .action((opts) => {
+    daemonInstallLaunchd(opts.mode, parseInt(opts.port, 10));
   });
 
 program.parse();

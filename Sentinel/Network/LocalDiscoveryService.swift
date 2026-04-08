@@ -156,13 +156,22 @@ final class LocalDiscoveryService {
 
     // MARK: - Send (same JSON format as remote mode)
 
-    /// Send event to Mac: {"event":"...", "data":{...}}\n
+    /// Send event to Mac (encrypted if key available)
     func emit(_ event: String, dict: [String: Any]) {
         guard let connection, isConnected else { return }
         let msg: [String: Any] = ["event": event, "data": dict]
-        guard var jsonData = try? JSONSerialization.data(withJSONObject: msg) else { return }
-        jsonData.append(0x0A) // newline delimiter
-        connection.send(content: jsonData, completion: .contentProcessed({ error in
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: msg),
+              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+
+        var lineData: Data
+        if TransportEncryption.isEnabled, let encrypted = TransportEncryption.encrypt(jsonString) {
+            lineData = Data(encrypted.utf8)
+        } else {
+            lineData = jsonData
+        }
+        lineData.append(0x0A)
+
+        connection.send(content: lineData, completion: .contentProcessed({ error in
             if let error { log.error("Send failed: \(error)") }
         }))
     }
@@ -192,10 +201,23 @@ final class LocalDiscoveryService {
         while let newlineIndex = buffer.firstIndex(of: 0x0A) {
             let lineData = buffer[buffer.startIndex..<newlineIndex]
             buffer = Data(buffer[(newlineIndex + 1)...])
+            guard !lineData.isEmpty else { continue }
 
-            guard !lineData.isEmpty,
-                  let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  let event = json["event"] as? String else {
+            // Try decrypt, then parse JSON
+            var jsonDict: [String: Any]?
+            if let lineStr = String(data: lineData, encoding: .utf8) {
+                if lineStr.hasPrefix("{") {
+                    // Plain JSON (handshake or unencrypted)
+                    jsonDict = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
+                } else if TransportEncryption.isEnabled, let decrypted = TransportEncryption.decrypt(lineStr) {
+                    // Encrypted message
+                    if let data = decrypted.data(using: .utf8) {
+                        jsonDict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                    }
+                }
+            }
+
+            guard let json = jsonDict, let event = json["event"] as? String else {
                 continue
             }
 

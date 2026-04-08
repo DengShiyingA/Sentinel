@@ -11,6 +11,8 @@ import { appendLog } from '../lib/history';
 import { getOverrideState } from '../lib/overrides';
 import { isOverBudget } from '../lib/budget';
 import { summarize, summarizeStop } from '../lib/summarizer';
+import { shouldAutoAllow, getMode } from '../lib/modes';
+import { addSessionEvent, getCurrentSession, startSession } from '../lib/session';
 import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
 
@@ -59,6 +61,9 @@ export function createHttpServer(port: number = 7749): express.Application {
 
     log.info(`Hook: ${tool_name}${filePath ? ` → ${filePath}` : ''}`);
 
+    // Auto-start session on first hook
+    if (!getCurrentSession()) startSession();
+
     // 0. Check overrides
     const overrides = getOverrideState();
     if (overrides.blockAll) {
@@ -75,6 +80,19 @@ export function createHttpServer(port: number = 7749): express.Application {
     }
 
     if (isOverBudget()) log.warn('⚠ Over daily budget!');
+
+    // 0.6 Permission mode check
+    const modeResult = shouldAutoAllow(tool_name);
+    if (modeResult === 'block') {
+      appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'lockdown', decision: 'blocked', timestamp: ts });
+      pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'blocked', reason: 'lockdown' });
+      return res.json({ decision: 'block', reason: 'lockdown mode' });
+    }
+    if (modeResult === 'auto_allow') {
+      appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'mode', decision: 'auto_allow', timestamp: ts, summary: `${getMode()} mode` });
+      pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'allowed', reason: `mode:${getMode()}` });
+      return res.json({ decision: 'allow' });
+    }
 
     // 1. Local rules
     const match = matchRules(tool_name, filePath);
@@ -155,6 +173,7 @@ export function createHttpServer(port: number = 7749): express.Application {
       const summary = summarizeStop(stopReason);
       log.info(`[event] Stop: ${summary}`);
       sendActivity('stop', { stopReason, summary });
+      addSessionEvent({ type: 'stop', stopReason, summary, timestamp: ts });
 
       // Send system notification (important — user may not be looking)
       const transport = getTransport();
