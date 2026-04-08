@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'transport.dart';
-import 'lan_transport.dart';
+import 'lan_transport.dart' if (dart.library.html) 'lan_transport_stub.dart';
+import 'server_transport.dart';
 import '../../shared/models/approval_request.dart';
 import '../../shared/models/activity_item.dart';
 import '../trust/temporary_trust.dart';
@@ -117,7 +118,23 @@ class SentinelNotifier extends Notifier<SentinelState> {
     }
   }
 
-  /// 断开连接
+  Future<void> connectServer(String url, {String? token}) async {
+    _transport?.disconnect();
+    state = state.copyWith(status: ConnStatus.connecting, error: null);
+
+    final server = ServerTransport();
+    server.configure(url, token: token);
+    _wireCallbacks(server);
+    _transport = server;
+
+    try {
+      await server.connect();
+      state = state.copyWith(status: ConnStatus.connected, host: url);
+    } catch (e) {
+      state = state.copyWith(status: ConnStatus.error, error: e.toString());
+    }
+  }
+
   void disconnect() {
     _transport?.disconnect();
     _transport = null;

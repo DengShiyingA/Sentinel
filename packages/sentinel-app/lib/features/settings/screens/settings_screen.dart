@@ -110,6 +110,42 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
 
+          if (s.mode == ConnectionMode.server) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('服务器连接', style: theme.textTheme.titleSmall),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _hostController,
+                      decoration: const InputDecoration(
+                        labelText: '服务器地址',
+                        hintText: 'http://your-server:3005',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: s.status == ConnStatus.connecting
+                        ? null
+                        : () => notifier.connectServer(_hostController.text.trim()),
+                    child: s.status == ConnStatus.connecting
+                        ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Text('连接'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           // ========== 断开 ==========
           if (s.isConnected) ...[
             const Divider(),
