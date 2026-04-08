@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'theme.dart';
-import '../features/approval/screens/dashboard_screen.dart';
+import '../features/approval/screens/approval_list_screen.dart';
 import '../features/approval/screens/approval_detail_screen.dart';
+import '../features/terminal/screens/terminal_screen.dart';
 import '../features/messages/screens/messages_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/rules/screens/rules_screen.dart';
@@ -28,12 +29,12 @@ final _router = GoRouter(
   initialLocation: '/approval',
   routes: [
     StatefulShellRoute.indexedStack(
-      builder: (context, state, shell) => ScaffoldWithNav(shell: shell),
+      builder: (context, state, shell) => _Shell(shell: shell),
       branches: [
         StatefulShellBranch(routes: [
           GoRoute(
             path: '/approval',
-            builder: (_, __) => const DashboardScreen(),
+            builder: (_, __) => const ApprovalListScreen(),
             routes: [
               GoRoute(
                 path: 'detail/:id',
@@ -43,6 +44,9 @@ final _router = GoRouter(
               ),
             ],
           ),
+        ]),
+        StatefulShellBranch(routes: [
+          GoRoute(path: '/terminal', builder: (_, __) => const TerminalScreen()),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(path: '/messages', builder: (_, __) => const MessagesScreen()),
@@ -61,23 +65,57 @@ final _router = GoRouter(
   ],
 );
 
-class ScaffoldWithNav extends StatelessWidget {
+class _Shell extends ConsumerWidget {
   final StatefulNavigationShell shell;
-  const ScaffoldWithNav({super.key, required this.shell});
+  const _Shell({required this.shell});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(connectionProvider);
+
     return Scaffold(
       body: shell,
       bottomNavigationBar: NavigationBar(
         selectedIndex: shell.currentIndex,
         onDestinationSelected: shell.goBranch,
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.shield), label: '审批'),
-          NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: '消息'),
-          NavigationDestination(icon: Icon(Icons.settings), label: '设置'),
+        destinations: [
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: s.pendingRequests.isNotEmpty,
+              label: Text('${s.pendingRequests.length}'),
+              child: const Icon(Icons.shield_outlined),
+            ),
+            selectedIcon: Badge(
+              isLabelVisible: s.pendingRequests.isNotEmpty,
+              label: Text('${s.pendingRequests.length}'),
+              child: const Icon(Icons.shield),
+            ),
+            label: '审批',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.terminal_outlined),
+            selectedIcon: Icon(Icons.terminal),
+            label: '终端',
+          ),
+          NavigationDestination(
+            icon: Badge(
+              isLabelVisible: s.newActivityCount > 0,
+              label: Text('${s.newActivityCount}'),
+              child: const Icon(Icons.chat_bubble_outline),
+            ),
+            selectedIcon: const Icon(Icons.chat_bubble),
+            label: '消息',
+          ),
+          const NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: '设置',
+          ),
         ],
       ),
     );
   }
 }
+
+// Re-export for settings connect redirect
+import '../core/transport/connection_provider.dart';
