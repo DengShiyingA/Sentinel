@@ -10,6 +10,7 @@ final class LocalTransport: TransportProtocol {
     var onRequest: ((ApprovalRequest) -> Void)?
     var onActivity: ((ActivityItem) -> Void)?
     var onDecisionSync: ((String) -> Void)?
+    var onTerminal: ((String) -> Void)?
 
     init(discovery: LocalDiscoveryService) {
         self.discovery = discovery
@@ -57,6 +58,12 @@ final class LocalTransport: TransportProtocol {
                     let message = dict["message"] as? String ?? ""
                     NotificationService.shared.postSimpleNotification(title: title, body: message)
                     log.info("Notification: \(title) — \(message)")
+                }
+
+            case "terminal":
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let text = dict["text"] as? String {
+                    self?.onTerminal?(text)
                 }
 
             case "activity":

@@ -19,6 +19,7 @@ final class RelayService {
     var onRequest: ((ApprovalRequest) -> Void)?
     var onActivity: ((ActivityItem) -> Void)?
     var onDecisionSync: ((String) -> Void)?
+    var onTerminal: ((String) -> Void)?
 
     init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
         self.socket = socket
@@ -56,6 +57,7 @@ final class RelayService {
         newTransport.onRequest = onRequest
         newTransport.onActivity = onActivity
         newTransport.onDecisionSync = onDecisionSync
+        newTransport.onTerminal = onTerminal
         transport = newTransport
 
         // Connect async

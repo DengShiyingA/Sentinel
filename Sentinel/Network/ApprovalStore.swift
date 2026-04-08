@@ -9,6 +9,7 @@ final class ApprovalStore {
     var resolvedCount: Int = 0
     var activityFeed: [ActivityItem] = []
     var newActivityCount: Int = 0
+    var terminalLines: [TerminalLine] = []
 
     private let relay: RelayService
     private var timeoutTasks: [String: Task<Void, Never>] = [:]
@@ -30,6 +31,20 @@ final class ApprovalStore {
         }
         relay.onDecisionSync = { [weak self] requestId in
             self?.handleDecisionSync(requestId)
+        }
+        relay.onTerminal = { [weak self] text in
+            self?.handleTerminalLine(text)
+        }
+    }
+
+    // MARK: - Terminal
+
+    private func handleTerminalLine(_ text: String) {
+        Task { @MainActor in
+            self.terminalLines.append(TerminalLine.from(text: text))
+            if self.terminalLines.count > 500 {
+                self.terminalLines.removeFirst(self.terminalLines.count - 500)
+            }
         }
     }
 

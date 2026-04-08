@@ -12,6 +12,7 @@ final class ServerTransport: TransportProtocol {
     var onRequest: ((ApprovalRequest) -> Void)?
     var onActivity: ((ActivityItem) -> Void)?
     var onDecisionSync: ((String) -> Void)?
+    var onTerminal: ((String) -> Void)?
 
     init(socket: SocketClient, serverURL: String, deviceId: String) {
         self.socket = socket

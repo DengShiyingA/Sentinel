@@ -26,6 +26,11 @@ struct MainTabView: View {
                 }
                 .badge(store.pendingRequests.count)
 
+            TerminalView()
+                .tabItem {
+                    Label(String(localized: "终端"), systemImage: "terminal")
+                }
+
             ActivityFeedView()
                 .tabItem {
                     Label(String(localized: "活动"), systemImage: "list.bullet.rectangle")

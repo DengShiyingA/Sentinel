@@ -33,6 +33,20 @@ export function pushEvent(data: Record<string, unknown>): void {
   }
 }
 
+/** Send a terminal line to iOS via transport */
+function sendTerminalLine(text: string): void {
+  const transport = getTransport();
+  if (!transport?.isConnected) return;
+  if ('sendEvent' in transport && typeof (transport as any).sendEvent === 'function') {
+    (transport as any).sendEvent({ type: 'terminal', text });
+  }
+  // Also push to terminal SSE clients
+  const msg = `data: ${JSON.stringify({ text, time: Date.now() })}\n\n`;
+  for (const client of terminalClients) { client.write(msg); }
+}
+
+const terminalClients = new Set<express.Response>();
+
 /** Send activity event to iOS via transport */
 function sendActivity(type: string, data: Record<string, unknown>): void {
   const transport = getTransport();
@@ -127,9 +141,11 @@ export function createHttpServer(port: number = 7749): express.Application {
 
       if (action === 'allowed') {
         log.success(`Allowed: ${tool_name} (${remoteId})`);
+        sendTerminalLine(`✅ ${tool_name}${filePath ? ` → ${filePath}` : ''} — allowed`);
         return res.json({ decision: 'allow' });
       } else {
         log.warn(`Blocked: ${tool_name} (${remoteId}) — ${action}`);
+        sendTerminalLine(`❌ ${tool_name}${filePath ? ` → ${filePath}` : ''} — ${action}`);
         return res.json({ decision: 'block', reason: action });
       }
     } catch (err) {
@@ -156,10 +172,21 @@ export function createHttpServer(port: number = 7749): express.Application {
       sendActivity('tool_completed', { toolName, summary });
       pushEvent({ time: ts, type: 'tool_completed', tool: toolName, summary });
 
+      // Terminal output: send tool response to iOS terminal view
+      const responseText = typeof body.tool_response === 'string'
+        ? body.tool_response
+        : JSON.stringify(body.tool_response ?? '', null, 2);
+      sendTerminalLine(`[${toolName}] ${summary}`);
+      if (responseText && responseText.length > 2) {
+        const lines = responseText.slice(0, 2000).split('\n');
+        for (const line of lines) { sendTerminalLine(line); }
+      }
+
     } else if (hookEvent === 'Notification' || hookEvent === 'notification') {
       const message = body.message ?? body.text ?? '';
       log.info(`[event] Notification: ${message}`);
       sendActivity('notification', { message });
+      sendTerminalLine(`📢 ${message}`);
 
       // Also send system notification
       const transport = getTransport();
@@ -237,6 +264,16 @@ export function createHttpServer(port: number = 7749): express.Application {
     writeFileSync(PENDING_MSG_PATH, text);
     log.info(`Pending message saved: ${text.slice(0, 50)}`);
     res.json({ success: true });
+  });
+
+  // ==================== Terminal SSE ====================
+  app.get('/terminal', (_req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    terminalClients.add(res);
+    res.on('close', () => terminalClients.delete(res));
   });
 
   // ==================== SSE ====================
