@@ -1,5 +1,6 @@
 import net from 'net';
 import { randomBytes } from 'crypto';
+import { spawn as cpSpawn } from 'child_process';
 import { Bonjour } from 'bonjour-service';
 import type { Transport, ApprovalPayload } from './interface';
 import { pending } from '../relay/pending';
@@ -124,6 +125,7 @@ export class LocalTransport implements Transport {
       if (text) {
         log.info(`[local] Message from iOS: ${text}`);
         this.userMessageCb?.(text);
+        this.runClaude(text);
       }
     } else if (msg.event === 'heartbeat_ack') {
       // iOS responded to heartbeat
@@ -138,6 +140,57 @@ export class LocalTransport implements Transport {
   /** Send an activity event to iOS (fire-and-forget, no response needed) */
   sendEvent(data: Record<string, unknown>): void {
     this.send('activity', data);
+  }
+
+  /** Run claude --continue with user message, stream output back to iOS */
+  private runClaude(message: string): void {
+    // Notify iOS that we're processing
+    this.sendEvent({ type: 'claude_status', status: 'thinking', message });
+
+    const child = cpSpawn('claude', ['--continue', '--print', message], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    });
+
+    let output = '';
+
+    child.stdout?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+
+    child.stderr?.on('data', (chunk: Buffer) => {
+      output += chunk.toString();
+    });
+
+    child.on('close', (code) => {
+      const trimmed = output.trim();
+      if (trimmed) {
+        // Send response back to iOS
+        this.sendEvent({
+          type: 'claude_response',
+          message: trimmed,
+          exitCode: code,
+        });
+        log.success(`[local] Claude responded (${trimmed.length} chars)`);
+      } else {
+        this.sendEvent({
+          type: 'claude_response',
+          message: code === 0
+            ? 'Claude completed (no output)'
+            : 'Claude not available — is there an active session?',
+          exitCode: code,
+        });
+      }
+    });
+
+    child.on('error', (err) => {
+      log.error(`[local] Claude spawn error: ${err.message}`);
+      this.sendEvent({
+        type: 'claude_response',
+        message: `Error: ${err.message}. Make sure \`claude\` is installed and in PATH.`,
+        exitCode: -1,
+      });
+    });
   }
 
   /** Send a JSON message to connected iOS */

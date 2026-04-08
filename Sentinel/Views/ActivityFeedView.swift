@@ -147,6 +147,8 @@ struct ActivityRow: View {
         case .taskCompleted: return "checkmark.seal"
         case .sessionEnded: return "clock"
         case .userMessage: return "text.bubble"
+        case .claudeResponse: return "bubble.left.fill"
+        case .claudeStatus: return "ellipsis.bubble"
         }
     }
 
@@ -160,6 +162,8 @@ struct ActivityRow: View {
         case .taskCompleted: return .green
         case .sessionEnded: return .gray
         case .userMessage: return .blue
+        case .claudeResponse: return .purple
+        case .claudeStatus: return .gray
         }
     }
 }
@@ -238,6 +242,8 @@ struct ActivityDetailView: View {
         case .taskCompleted: .green
         case .sessionEnded: .gray
         case .userMessage: .blue
+        case .claudeResponse: .purple
+        case .claudeStatus: .gray
         }
     }
 }

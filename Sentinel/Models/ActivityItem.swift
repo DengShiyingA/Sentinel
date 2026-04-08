@@ -7,6 +7,8 @@ enum ActivityType: String, Codable {
     case taskCompleted  = "task_completed"
     case sessionEnded   = "session_ended"
     case userMessage    = "user_message"
+    case claudeResponse = "claude_response"
+    case claudeStatus   = "claude_status"
 
     var systemImage: String {
         switch self {
@@ -16,6 +18,8 @@ enum ActivityType: String, Codable {
         case .taskCompleted:  "checkmark.seal"
         case .sessionEnded:   "clock"
         case .userMessage:    "text.bubble"
+        case .claudeResponse: "bubble.left.fill"
+        case .claudeStatus:   "ellipsis.bubble"
         }
     }
 
@@ -27,6 +31,8 @@ enum ActivityType: String, Codable {
         case .taskCompleted:  String(localized: "子任务完成")
         case .sessionEnded:   String(localized: "会话结束")
         case .userMessage:    String(localized: "用户消息")
+        case .claudeResponse: String(localized: "Claude 回复")
+        case .claudeStatus:   String(localized: "思考中...")
         }
     }
 }
