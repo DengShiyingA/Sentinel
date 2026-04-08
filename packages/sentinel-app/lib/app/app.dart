@@ -5,9 +5,9 @@ import 'theme.dart';
 import '../features/approval/screens/approval_list_screen.dart';
 import '../features/approval/screens/approval_detail_screen.dart';
 import '../features/terminal/screens/terminal_screen.dart';
-import '../features/messages/screens/messages_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
 import '../features/rules/screens/rules_screen.dart';
+import '../core/transport/connection_provider.dart';
 
 class SentinelApp extends ConsumerWidget {
   const SentinelApp({super.key});
@@ -39,17 +39,13 @@ final _router = GoRouter(
               GoRoute(
                 path: 'detail/:id',
                 builder: (_, state) => ApprovalDetailScreen(
-                  requestId: state.pathParameters['id']!,
-                ),
+                    requestId: state.pathParameters['id']!),
               ),
             ],
           ),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(path: '/terminal', builder: (_, __) => const TerminalScreen()),
-        ]),
-        StatefulShellBranch(routes: [
-          GoRoute(path: '/messages', builder: (_, __) => const MessagesScreen()),
         ]),
         StatefulShellBranch(routes: [
           GoRoute(
@@ -97,15 +93,6 @@ class _Shell extends ConsumerWidget {
             selectedIcon: Icon(Icons.terminal),
             label: '终端',
           ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: s.newActivityCount > 0,
-              label: Text('${s.newActivityCount}'),
-              child: const Icon(Icons.chat_bubble_outline),
-            ),
-            selectedIcon: const Icon(Icons.chat_bubble),
-            label: '消息',
-          ),
           const NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             selectedIcon: Icon(Icons.settings),
@@ -116,6 +103,3 @@ class _Shell extends ConsumerWidget {
     );
   }
 }
-
-// Re-export for settings connect redirect
-import '../core/transport/connection_provider.dart';
