@@ -14,31 +14,36 @@ enum BiometricError: LocalizedError {
 
 enum BiometricService {
     /// Authenticate using Face ID / Touch ID.
+    /// On Simulator (no biometrics), falls back to device passcode.
     static func authenticate(reason: String) async throws {
         let context = LAContext()
         var error: NSError?
 
-        guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) else {
-            throw BiometricError.notAvailable
-        }
-
-        do {
+        // Try biometrics first
+        if context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error) {
             let success = try await context.evaluatePolicy(
                 .deviceOwnerAuthenticationWithBiometrics,
                 localizedReason: reason
             )
-            if !success {
-                throw BiometricError.authFailed(String(localized: "认证失败"))
-            }
-        } catch let authError as LAError {
-            switch authError.code {
-            case .userCancel:
-                throw BiometricError.authFailed(String(localized: "用户取消"))
-            case .userFallback:
-                throw BiometricError.authFailed(String(localized: "用户选择了密码"))
-            default:
-                throw BiometricError.authFailed(authError.localizedDescription)
-            }
+            if !success { throw BiometricError.authFailed(String(localized: "认证失败")) }
+            return
         }
+
+        // Fallback: device passcode (works on Simulator)
+        if context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) {
+            let success = try await context.evaluatePolicy(
+                .deviceOwnerAuthentication,
+                localizedReason: reason
+            )
+            if !success { throw BiometricError.authFailed(String(localized: "认证失败")) }
+            return
+        }
+
+        // No auth available (Simulator without passcode) — allow directly
+        #if targetEnvironment(simulator)
+        return  // Skip auth on Simulator
+        #else
+        throw BiometricError.notAvailable
+        #endif
     }
 }
