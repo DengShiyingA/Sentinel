@@ -123,6 +123,11 @@ export class LocalTransport implements Transport {
     }
   }
 
+  /** Send a notification to iOS */
+  sendNotification(title: string, message: string): void {
+    this.send('notification', { title, message });
+  }
+
   /** Send a JSON message to connected iOS */
   private send(event: string, data: any): void {
     if (!this.iosSocket || this.iosSocket.destroyed) return;

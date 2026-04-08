@@ -35,17 +35,31 @@ final class LocalTransport: TransportProtocol {
     private func setupListener() {
         discovery.onEvent = { [weak self] event, data in
             log.info("LocalTransport received event: \(event), bytes: \(data.count)")
-            guard event == "approval_request" else { return }
-            do {
-                let request = try JSONDecoder.sentinelDecoder.decode(ApprovalRequest.self, from: data)
-                log.info("Decoded request: \(request.id) tool=\(request.toolName)")
-                self?.onRequest?(request)
-            } catch {
-                log.error("Decode error: \(error)")
-                // Log raw JSON for debugging
-                if let raw = String(data: data, encoding: .utf8) {
-                    log.error("Raw JSON: \(raw.prefix(200))")
+
+            switch event {
+            case "approval_request":
+                do {
+                    let request = try JSONDecoder.sentinelDecoder.decode(ApprovalRequest.self, from: data)
+                    log.info("Decoded request: \(request.id) tool=\(request.toolName)")
+                    self?.onRequest?(request)
+                } catch {
+                    log.error("Decode error: \(error)")
+                    if let raw = String(data: data, encoding: .utf8) {
+                        log.error("Raw JSON: \(raw.prefix(200))")
+                    }
                 }
+
+            case "notification":
+                // Mac sent a custom notification (sentinel notify "message")
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let title = dict["title"] as? String ?? "Sentinel"
+                    let message = dict["message"] as? String ?? ""
+                    NotificationService.shared.postSimpleNotification(title: title, body: message)
+                    log.info("Notification: \(title) — \(message)")
+                }
+
+            default:
+                break
             }
         }
     }

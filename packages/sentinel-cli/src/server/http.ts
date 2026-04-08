@@ -111,6 +111,27 @@ export function createHttpServer(port: number = 7749): express.Application {
     }
   });
 
+  // Notify endpoint — relay notification to iOS
+  app.post('/notify', (req, res) => {
+    const { title, message } = req.body ?? {};
+    if (!message) return res.status(400).json({ error: 'message required' });
+
+    const transport = getTransport();
+    if (!transport || !transport.isConnected) {
+      return res.status(503).json({ error: 'iOS not connected' });
+    }
+
+    // Emit notification event via transport
+    if ('sendNotification' in transport && typeof (transport as any).sendNotification === 'function') {
+      (transport as any).sendNotification(title ?? 'Sentinel', message);
+    } else {
+      return res.status(501).json({ error: 'Notify not supported for this transport mode' });
+    }
+
+    log.info(`Notification sent: ${title ?? 'Sentinel'} — ${message}`);
+    res.json({ success: true });
+  });
+
   // SSE endpoint for sentinel watch
   app.get('/events', (_req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');

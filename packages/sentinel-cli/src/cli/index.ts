@@ -15,6 +15,8 @@ import { LocalTransport } from '../transport/local';
 import { getHistory, getTodayStats } from '../lib/history';
 import { setBudgetLimit, getBudgetStatus, isOverBudget } from '../lib/budget';
 import { setBlockAll, setAllowAll, getOverrideInfo, getOverrideState } from '../lib/overrides';
+import { runDoctor } from '../lib/doctor';
+import { daemonStart, daemonStop, daemonStatus, daemonRestart } from '../lib/daemon';
 import { log } from '../lib/logger';
 
 const program = new Command();
@@ -46,9 +48,16 @@ program
   .option('-p, --port <port>', 'HTTP hook 端口', '7749')
   .option('-m, --mode <mode>', '连接模式: local | cloudkit | server', 'local')
   .option('-s, --server <url>', '服务器地址（server 模式必须）')
+  .option('-d, --daemon', '后台运行')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     const mode = parseMode(opts.mode);
+
+    // Daemon mode: fork and exit
+    if (opts.daemon) {
+      daemonStart(mode, port, opts.server);
+      return;
+    }
 
     const modeLabels: Record<TransportMode, string> = {
       local: '局域网直连', cloudkit: 'CloudKit 同步', server: '自建服务器',
@@ -421,5 +430,72 @@ test.command('rules').description('测试规则匹配').action(() => {
   }
   console.log('');
 });
+
+// ==================== sentinel doctor ====================
+
+program.command('doctor').description('系统诊断').action(async () => {
+  await runDoctor();
+});
+
+// ==================== sentinel notify ====================
+
+program.command('notify <message>').description('发送通知到 iOS')
+  .option('-t, --title <title>', '通知标题', 'Sentinel')
+  .action(async (message: string, opts) => {
+    const title = opts.title;
+
+    // Try via running server first
+    try {
+      const statusRes = await fetch('http://localhost:7749/status');
+      const status = (await statusRes.json()) as Record<string, unknown>;
+      if (!status.connected) {
+        log.error('iOS not connected');
+        process.exit(1);
+      }
+
+      // Send via a special hook that the server relays
+      const res = await fetch('http://localhost:7749/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, message }),
+      });
+
+      if (res.ok) {
+        log.success(`Notification sent: "${message}"`);
+      } else {
+        log.error('Failed to send notification');
+      }
+    } catch {
+      log.error('Hook server not running. Start sentinel first.');
+    }
+  });
+
+// ==================== sentinel daemon ====================
+
+const daemon = program.command('daemon').description('后台服务管理');
+
+daemon.command('start').description('后台启动 Sentinel')
+  .option('-m, --mode <mode>', '连接模式', 'local')
+  .option('-p, --port <port>', 'HTTP hook 端口', '7749')
+  .option('-s, --server <url>', '服务器地址')
+  .action((opts) => {
+    daemonStart(opts.mode, parseInt(opts.port, 10), opts.server);
+  });
+
+daemon.command('stop').description('停止后台服务').action(() => {
+  daemonStop();
+});
+
+daemon.command('status').description('查看后台服务状态').action(async () => {
+  await daemonStatus();
+});
+
+daemon.command('restart').description('重启后台服务')
+  .option('-m, --mode <mode>', '连接模式', 'local')
+  .option('-p, --port <port>', 'HTTP hook 端口', '7749')
+  .option('-s, --server <url>', '服务器地址')
+  .action((opts) => {
+    daemonRestart(opts.mode, parseInt(opts.port, 10), opts.server);
+  });
 
 program.parse();

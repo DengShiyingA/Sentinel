@@ -82,6 +82,21 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request)
     }
 
+    /// Post a simple notification (from sentinel notify command)
+    func postSimpleNotification(title: String, body: String) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     /// Handle notification action (lock-screen allow/block buttons)
