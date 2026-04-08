@@ -6,6 +6,7 @@ import '../../../core/transport/connection_provider.dart';
 import '../../../core/auth/biometric_service.dart';
 import '../../../shared/models/approval_request.dart';
 import '../../../shared/widgets/diff_viewer.dart';
+import '../../../shared/utils/snackbar.dart';
 
 class ApprovalDetailScreen extends ConsumerWidget {
   final String requestId;
@@ -56,10 +57,7 @@ class ApprovalDetailScreen extends ConsumerWidget {
     if (high) {
       final ok = await BiometricService.authenticate(reason: '验证身份以允许高风险操作');
       if (!ok) {
-        if (ctx.mounted) {
-          ScaffoldMessenger.of(ctx).showSnackBar(
-            const SnackBar(content: Text('验证失败'), backgroundColor: Colors.red));
-        }
+        if (ctx.mounted) showError(ctx, '验证失败');
         return;
       }
     }

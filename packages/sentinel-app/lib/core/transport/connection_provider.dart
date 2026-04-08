@@ -75,7 +75,19 @@ class SentinelNotifier extends Notifier<SentinelState> {
   @override
   SentinelState build() {
     _loadMode();
+    _startHealthCheck();
     return const SentinelState();
+  }
+
+  void _startHealthCheck() {
+    ref.onDispose(() {});
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 5));
+      if (_transport != null && state.isConnected && !_transport!.isConnected) {
+        state = state.copyWith(status: ConnStatus.disconnected, error: '连接已断开');
+      }
+      return true;
+    });
   }
 
   Future<void> _loadMode() async {

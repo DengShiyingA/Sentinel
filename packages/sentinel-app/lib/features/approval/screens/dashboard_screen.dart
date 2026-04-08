@@ -6,6 +6,7 @@ import '../../../shared/models/approval_request.dart';
 import '../../../shared/models/activity_item.dart';
 import '../../../core/trust/temporary_trust.dart';
 import '../widgets/approval_card.dart';
+import '../../../shared/utils/snackbar.dart';
 import 'package:go_router/go_router.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
@@ -243,17 +244,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   /// 单个审批决策
   void _handleDecision(String requestId, Decision decision) {
     ref.read(connectionProvider.notifier).sendDecision(requestId, decision);
-    final isAllow = decision == Decision.allowed;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        Icon(isAllow ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 18),
-        const SizedBox(width: 8),
-        Text(isAllow ? '已允许' : '已拒绝'),
-      ]),
-      backgroundColor: isAllow ? Colors.green : Colors.red,
-      duration: const Duration(seconds: 1),
-      behavior: SnackBarBehavior.floating,
-    ));
+    if (decision == Decision.allowed) {
+      showSuccess(context, '已允许');
+    } else {
+      showError(context, '已拒绝');
+    }
   }
 
   /// 批量审批决策
@@ -274,16 +269,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     HapticFeedback.heavyImpact();
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Row(children: [
-          Icon(isAllow ? Icons.check_circle : Icons.cancel, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Text('${isAllow ? '已允许' : '已拒绝'} ${ids.length} 项'),
-        ]),
-        backgroundColor: isAllow ? Colors.green : Colors.red,
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ));
+      if (isAllow) {
+        showSuccess(context, '已允许 ${ids.length} 项');
+      } else {
+        showError(context, '已拒绝 ${ids.length} 项');
+      }
     }
 
     setState(() {

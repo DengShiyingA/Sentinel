@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../../../core/transport/connection_provider.dart';
 import '../../../core/transport/transport.dart';
 import '../../../core/trust/temporary_trust.dart';
+import '../../../shared/utils/snackbar.dart';
+import '../../../shared/utils/platform.dart' as platform;
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -39,10 +41,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: SegmentedButton<ConnectionMode>(
-              segments: ConnectionMode.values.map((m) {
-                return ButtonSegment(value: m, label: Text(m.labelZh),
-                    icon: Icon(_modeIcon(m)));
-              }).toList(),
+              segments: ConnectionMode.values
+                  .where((m) => platform.supportsLan || m != ConnectionMode.lan)
+                  .map((m) => ButtonSegment(value: m, label: Text(m.labelZh), icon: Icon(_modeIcon(m))))
+                  .toList(),
               selected: {s.mode},
               onSelectionChanged: (sel) => notifier.switchMode(sel.first),
             ),
@@ -213,10 +215,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
           // ========== 关于 ==========
           const Divider(),
-          const ListTile(title: Text('版本'), trailing: Text('0.1.0')),
+          ListTile(
+            title: const Text('版本'),
+            trailing: Text('0.1.0${platform.isWeb ? ' (Web)' : ''}'),
+          ),
           const ListTile(
             title: Text('Sentinel Remote'),
-            subtitle: Text('Claude Code Approval Engine'),
+            subtitle: Text('Claude Code Approval Engine · Phase 2'),
           ),
           const SizedBox(height: 32),
         ],
@@ -233,18 +238,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // 连接成功 → 切换到审批 Tab
     if (mounted && ref.read(connectionProvider).isConnected) {
       context.go('/approval');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('连接成功'),
-          ]),
-          backgroundColor: Colors.green,
-          duration: Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      showSuccess(context, '连接成功');
     }
   }
 
@@ -264,22 +258,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final response = await request.close();
       final body = await response.transform(utf8.decoder).join();
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('测试 $toolName: $body'),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
+      if (mounted) showInfo(context, '测试 $toolName: $body');
       client.close();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('发送失败: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
-      }
+      if (mounted) showError(context, '发送失败: $e');
     }
   }
 
