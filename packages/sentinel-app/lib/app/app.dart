@@ -6,6 +6,7 @@ import '../features/approval/screens/dashboard_screen.dart';
 import '../features/approval/screens/approval_detail_screen.dart';
 import '../features/messages/screens/messages_screen.dart';
 import '../features/settings/screens/settings_screen.dart';
+import '../features/rules/screens/rules_screen.dart';
 
 class SentinelApp extends ConsumerWidget {
   const SentinelApp({super.key});
@@ -47,7 +48,13 @@ final _router = GoRouter(
           GoRoute(path: '/messages', builder: (_, __) => const MessagesScreen()),
         ]),
         StatefulShellBranch(routes: [
-          GoRoute(path: '/settings', builder: (_, __) => const SettingsScreen()),
+          GoRoute(
+            path: '/settings',
+            builder: (_, __) => const SettingsScreen(),
+            routes: [
+              GoRoute(path: 'rules', builder: (_, __) => const RulesScreen()),
+            ],
+          ),
         ]),
       ],
     ),

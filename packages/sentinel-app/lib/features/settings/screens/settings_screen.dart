@@ -150,7 +150,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             const SizedBox(height: 12),
           ],
 
-          // ========== 临时信任规则 ==========
+          // ========== 规则管理 ==========
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.rule),
+            title: const Text('规则管理'),
+            subtitle: const Text('查看和编辑审批规则'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.go('/settings/rules'),
+          ),
+
           _TrustRulesSection(),
 
           // ========== 统计 ==========
