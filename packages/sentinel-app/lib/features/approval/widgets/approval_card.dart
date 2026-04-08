@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../shared/models/approval_request.dart';
 import '../../../core/auth/biometric_service.dart';
+import '../../../shared/widgets/diff_viewer.dart';
 
-/// 审批请求卡片 — 显示风险等级、工具信息、倒计时、操作按钮
-/// 高风险操作点击"允许"会自动触发 Face ID / Fingerprint 验证
+/// 审批请求卡片 — 风险等级、意图摘要、Diff 预览、倒计时、操作按钮
+/// 高风险操作点击"允许"自动触发 Face ID / Fingerprint 验证
 class ApprovalCard extends StatelessWidget {
   final ApprovalRequest request;
   final VoidCallback onAllow;
@@ -119,6 +120,9 @@ class ApprovalCard extends StatelessWidget {
               ),
             ),
           ),
+
+          // ========== Diff 预览（仅 Write/Edit 有 diff 时显示）==========
+          CollapsibleDiff(diff: request.diff),
 
           // ========== 操作按钮 ==========
           Padding(

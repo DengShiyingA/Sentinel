@@ -13,6 +13,7 @@ import { isOverBudget } from '../lib/budget';
 import { summarize, summarizeStop } from '../lib/summarizer';
 import { shouldAutoAllow, getMode } from '../lib/modes';
 import { addSessionEvent, getCurrentSession, startSession } from '../lib/session';
+import { generateDiff } from '../lib/diff';
 import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
 
@@ -124,10 +125,14 @@ export function createHttpServer(port: number = 7749): express.Application {
     }
 
     try {
+      // 为 Write/Edit 生成 diff
+      const diff = generateDiff(tool_name, tool_input as Record<string, unknown>);
+
       const remoteId = await transport.sendApprovalRequest({
         toolName: tool_name,
         toolInput: tool_input as Record<string, unknown>,
         riskLevel: riskToLevel(match.action),
+        diff,
       });
 
       log.info(`[${transport.mode}] Waiting: ${remoteId}`);

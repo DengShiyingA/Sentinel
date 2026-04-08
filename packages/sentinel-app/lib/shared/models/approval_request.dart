@@ -1,4 +1,5 @@
-/// Matches shared-types-protocol.ts ApprovalRequest
+/// 审批请求模型 — 对应 shared-types-protocol.ts ApprovalRequest
+
 enum RiskLevel {
   requireConfirm('require_confirm'),
   requireFaceID('require_faceid');
@@ -31,6 +32,10 @@ class ApprovalRequest {
   final String macDeviceId;
   final DateTime timeoutAt;
 
+  /// Git-style diff 文本（Write/Edit 操作时由 CLI 生成）
+  /// 为 null 表示无文件变更（如 Bash、Read 等）
+  final String? diff;
+
   ApprovalRequest({
     required this.id,
     required this.toolName,
@@ -39,6 +44,7 @@ class ApprovalRequest {
     required this.timestamp,
     required this.macDeviceId,
     required this.timeoutAt,
+    this.diff,
   });
 
   factory ApprovalRequest.fromJson(Map<String, dynamic> json) {
@@ -51,9 +57,11 @@ class ApprovalRequest {
       macDeviceId: json['macDeviceId'] as String? ?? 'local',
       timeoutAt: DateTime.tryParse(json['timeoutAt'] as String? ?? '') ??
           DateTime.now().add(const Duration(seconds: 120)),
+      diff: json['diff'] as String?,
     );
   }
 
+  bool get hasDiff => diff != null && diff!.trim().isNotEmpty;
   Duration get remaining => timeoutAt.difference(DateTime.now());
   bool get isExpired => remaining.isNegative;
 }

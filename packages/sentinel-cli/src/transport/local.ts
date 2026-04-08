@@ -237,6 +237,7 @@ export class LocalTransport implements Transport {
       macDeviceId: 'local',
       timestamp: new Date().toISOString(),
       timeoutAt: new Date(Date.now() + 120_000).toISOString(),
+      ...(payload.diff ? { diff: payload.diff } : {}),
     });
 
     return requestId;
