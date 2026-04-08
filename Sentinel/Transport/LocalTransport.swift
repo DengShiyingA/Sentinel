@@ -83,7 +83,7 @@ final class LocalTransport: TransportProtocol {
                     let item = ActivityItem(
                         id: UUID().uuidString,
                         type: type,
-                        summary: dict["summary"] as? String ?? dict["message"] as? String ?? typeStr,
+                        summary: dict["summary"] as? String ?? dict["message"] as? String ?? dict["text"] as? String ?? typeStr,
                         toolName: dict["toolName"] as? String,
                         timestamp: Date(),
                         stopReason: dict["stopReason"] as? String,

@@ -155,14 +155,17 @@ export class LocalTransport implements Transport {
     this.send('notification', { title, message });
   }
 
-  /** Send an activity event to iOS (fire-and-forget, no response needed) */
   sendEvent(data: Record<string, unknown>): void {
-    this.send('activity', data);
+    const type = data.type as string | undefined;
+    if (type === 'terminal') {
+      this.send('terminal', data);
+    } else {
+      this.send('activity', data);
+    }
   }
 
-  /** Run claude --continue with user message, stream output back to iOS */
   private runClaude(message: string): void {
-    // Notify iOS that we're processing
+    this.send('terminal', { type: 'terminal', text: `> ${message}` });
     this.sendEvent({ type: 'claude_status', status: 'thinking', message });
 
     const child = cpSpawn('claude', ['--continue', '--print', message], {
@@ -171,41 +174,42 @@ export class LocalTransport implements Transport {
     });
 
     let output = '';
+    let lineBuffer = '';
 
-    child.stdout?.on('data', (chunk: Buffer) => {
+    const streamLines = (chunk: Buffer) => {
+      lineBuffer += chunk.toString();
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.trim()) {
+          this.send('terminal', { type: 'terminal', text: line });
+        }
+      }
       output += chunk.toString();
-    });
+    };
 
-    child.stderr?.on('data', (chunk: Buffer) => {
-      output += chunk.toString();
-    });
+    child.stdout?.on('data', streamLines);
+    child.stderr?.on('data', streamLines);
 
     child.on('close', (code) => {
-      const trimmed = output.trim();
-      if (trimmed) {
-        // Send response back to iOS
-        this.sendEvent({
-          type: 'claude_response',
-          message: trimmed,
-          exitCode: code,
-        });
-        log.success(`[local] Claude responded (${trimmed.length} chars)`);
-      } else {
-        this.sendEvent({
-          type: 'claude_response',
-          message: code === 0
-            ? 'Claude completed (no output)'
-            : 'Claude not available — is there an active session?',
-          exitCode: code,
-        });
+      if (lineBuffer.trim()) {
+        this.send('terminal', { type: 'terminal', text: lineBuffer });
       }
+
+      const trimmed = output.trim();
+      this.sendEvent({
+        type: 'claude_response',
+        message: trimmed || (code === 0 ? '完成（无输出）' : '无活跃会话'),
+        exitCode: code,
+      });
+      log.success(`[local] Claude responded (${trimmed.length} chars, exit ${code})`);
     });
 
     child.on('error', (err) => {
-      log.error(`[local] Claude spawn error: ${err.message}`);
+      log.error(`[local] Claude error: ${err.message}`);
       this.sendEvent({
         type: 'claude_response',
-        message: `Error: ${err.message}. Make sure \`claude\` is installed and in PATH.`,
+        message: `错误: ${err.message}`,
         exitCode: -1,
       });
     });
