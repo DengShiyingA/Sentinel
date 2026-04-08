@@ -49,6 +49,13 @@ export class LocalTransport implements Transport {
         this.buffer = '';
         log.success(`[local] iOS connected from ${socket.remoteAddress}`);
 
+        // Send plaintext handshake with encryption key
+        const handshake = JSON.stringify({
+          event: 'handshake',
+          data: { version: '2', ek: getTransportKeyBase64() },
+        }) + '\n';
+        socket.write(handshake);
+
         socket.on('data', (chunk) => {
           this.buffer += chunk.toString();
           this.processBuffer();
@@ -204,12 +211,11 @@ export class LocalTransport implements Transport {
     });
   }
 
-  /** Send an encrypted JSON message to connected iOS */
+  /** Send a JSON message to connected iOS */
   private send(event: string, data: any): void {
     if (!this.iosSocket || this.iosSocket.destroyed) return;
-    const json = JSON.stringify({ event, data });
-    const encrypted = encryptMessage(json, getTransportKey());
-    this.iosSocket.write(encrypted + '\n');
+    const msg = JSON.stringify({ event, data }) + '\n';
+    this.iosSocket.write(msg);
   }
 
   async sendApprovalRequest(payload: ApprovalPayload): Promise<string> {

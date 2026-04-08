@@ -3,18 +3,17 @@ import OSLog
 
 private let log = Logger(subsystem: "com.sentinel.ios", category: "LocalTransport")
 
-/// Wraps LocalDiscoveryService as a TransportProtocol.
 final class LocalTransport: TransportProtocol {
     private let discovery: LocalDiscoveryService
 
-    var onRequest: ((ApprovalRequest) -> Void)?
-    var onActivity: ((ActivityItem) -> Void)?
-    var onDecisionSync: ((String) -> Void)?
-    var onTerminal: ((String) -> Void)?
+    var onRequest: ((ApprovalRequest) -> Void)? { didSet { rebindListener() } }
+    var onActivity: ((ActivityItem) -> Void)? { didSet { rebindListener() } }
+    var onDecisionSync: ((String) -> Void)? { didSet { rebindListener() } }
+    var onTerminal: ((String) -> Void)? { didSet { rebindListener() } }
 
     init(discovery: LocalDiscoveryService) {
         self.discovery = discovery
-        setupListener()
+        rebindListener()
     }
 
     var isConnected: Bool { discovery.isConnected }
@@ -35,20 +34,32 @@ final class LocalTransport: TransportProtocol {
         ])
     }
 
-    private func setupListener() {
-        discovery.onEvent = { [weak self] event, data in
-            log.info("LocalTransport received event: \(event), bytes: \(data.count)")
+    /// Re-set discovery.onEvent every time a callback changes,
+    /// so closures always reference the latest callbacks.
+    private func rebindListener() {
+        let onReq = onRequest
+        let onAct = onActivity
+        let onSync = onDecisionSync
+        let onTerm = onTerminal
 
+        discovery.onEvent = { event, data in
             switch event {
+            case "handshake":
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let ek = dict["ek"] as? String {
+                    TransportEncryption.setKey(base64: ek)
+                    log.info("Encryption key received")
+                }
+
             case "approval_request":
                 do {
                     let request = try JSONDecoder.sentinelDecoder.decode(ApprovalRequest.self, from: data)
-                    log.info("Decoded request: \(request.id) tool=\(request.toolName)")
-                    self?.onRequest?(request)
+                    log.info("Request: \(request.id) tool=\(request.toolName)")
+                    onReq?(request)
                 } catch {
                     log.error("Decode error: \(error)")
                     if let raw = String(data: data, encoding: .utf8) {
-                        log.error("Raw JSON: \(raw.prefix(200))")
+                        log.error("Raw: \(raw.prefix(200))")
                     }
                 }
 
@@ -57,13 +68,12 @@ final class LocalTransport: TransportProtocol {
                     let title = dict["title"] as? String ?? "Sentinel"
                     let message = dict["message"] as? String ?? ""
                     NotificationService.shared.postSimpleNotification(title: title, body: message)
-                    log.info("Notification: \(title) — \(message)")
                 }
 
             case "terminal":
                 if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let text = dict["text"] as? String {
-                    self?.onTerminal?(text)
+                    onTerm?(text)
                 }
 
             case "activity":
@@ -79,7 +89,7 @@ final class LocalTransport: TransportProtocol {
                         stopReason: dict["stopReason"] as? String,
                         message: dict["message"] as? String
                     )
-                    self?.onActivity?(item)
+                    onAct?(item)
                 }
 
             default:

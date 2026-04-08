@@ -15,17 +15,14 @@ export interface Transport {
   readonly mode: TransportMode;
   readonly isConnected: boolean;
 
-  /** Start the transport (connect or listen) */
   start(): Promise<void>;
-
-  /** Send an approval request, returns requestId */
   sendApprovalRequest(payload: ApprovalPayload): Promise<string>;
-
-  /** Register callback for decision events */
   onDecision(cb: (requestId: string, action: 'allowed' | 'blocked' | 'timeout') => void): void;
-
-  /** Shut down */
   stop(): void;
+
+  /** Send fire-and-forget event to iOS (terminal, activity, notification) */
+  sendEvent?(data: Record<string, unknown>): void;
+  sendNotification?(title: string, message: string): void;
 }
 
 /** Global transport instance — set by start command */

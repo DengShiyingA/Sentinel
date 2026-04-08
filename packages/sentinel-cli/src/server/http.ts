@@ -36,23 +36,20 @@ export function pushEvent(data: Record<string, unknown>): void {
 /** Send a terminal line to iOS via transport */
 function sendTerminalLine(text: string): void {
   const transport = getTransport();
-  if (!transport?.isConnected) return;
-  if ('sendEvent' in transport && typeof (transport as any).sendEvent === 'function') {
-    (transport as any).sendEvent({ type: 'terminal', text });
+  if (transport?.isConnected) {
+    transport.sendEvent?.({ type: 'terminal', text });
   }
-  // Also push to terminal SSE clients
   const msg = `data: ${JSON.stringify({ text, time: Date.now() })}\n\n`;
   for (const client of terminalClients) { client.write(msg); }
 }
 
 const terminalClients = new Set<express.Response>();
 
-/** Send activity event to iOS via transport */
 function sendActivity(type: string, data: Record<string, unknown>): void {
   const transport = getTransport();
-  if (!transport?.isConnected) return;
-  if ('sendEvent' in transport && typeof (transport as any).sendEvent === 'function') {
-    (transport as any).sendEvent({ type, ...data, timestamp: new Date().toISOString() });
+  log.debug(`sendActivity: transport=${transport?.mode ?? 'null'} connected=${transport?.isConnected} hasSendEvent=${!!transport?.sendEvent}`);
+  if (transport?.isConnected) {
+    transport.sendEvent?.({ type, ...data, timestamp: new Date().toISOString() });
   }
 }
 
@@ -190,7 +187,7 @@ export function createHttpServer(port: number = 7749): express.Application {
 
       // Also send system notification
       const transport = getTransport();
-      if (transport?.isConnected && 'sendNotification' in transport) {
+      if (transport?.isConnected && transport.sendNotification) {
         (transport as any).sendNotification('Claude Code', message);
       }
       pushEvent({ time: ts, type: 'notification', message });
@@ -204,7 +201,7 @@ export function createHttpServer(port: number = 7749): express.Application {
 
       // Send system notification (important — user may not be looking)
       const transport = getTransport();
-      if (transport?.isConnected && 'sendNotification' in transport) {
+      if (transport?.isConnected && transport.sendNotification) {
         const isError = stopReason === 'error';
         (transport as any).sendNotification(
           isError ? '❌ Claude Code' : '✅ Claude Code',
@@ -248,8 +245,8 @@ export function createHttpServer(port: number = 7749): express.Application {
     if (!message) return res.status(400).json({ error: 'message required' });
     const transport = getTransport();
     if (!transport?.isConnected) return res.status(503).json({ error: 'iOS not connected' });
-    if ('sendNotification' in transport) {
-      (transport as any).sendNotification(title ?? 'Sentinel', message);
+    if (transport.sendNotification) {
+      transport.sendNotification(title ?? 'Sentinel', message);
     } else {
       return res.status(501).json({ error: 'Not supported' });
     }
