@@ -34,12 +34,19 @@ final class LocalTransport: TransportProtocol {
 
     private func setupListener() {
         discovery.onEvent = { [weak self] event, data in
+            log.info("LocalTransport received event: \(event), bytes: \(data.count)")
             guard event == "approval_request" else { return }
-            guard let request = try? JSONDecoder.sentinelDecoder.decode(ApprovalRequest.self, from: data) else {
-                log.error("Failed to decode approval_request")
-                return
+            do {
+                let request = try JSONDecoder.sentinelDecoder.decode(ApprovalRequest.self, from: data)
+                log.info("Decoded request: \(request.id) tool=\(request.toolName)")
+                self?.onRequest?(request)
+            } catch {
+                log.error("Decode error: \(error)")
+                // Log raw JSON for debugging
+                if let raw = String(data: data, encoding: .utf8) {
+                    log.error("Raw JSON: \(raw.prefix(200))")
+                }
             }
-            self?.onRequest?(request)
         }
     }
 }

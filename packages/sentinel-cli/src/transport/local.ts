@@ -134,11 +134,19 @@ export class LocalTransport implements Transport {
     if (!this.isConnected) throw new Error('iOS not connected');
 
     const requestId = randomBytes(12).toString('hex');
+    // Map server risk levels to iOS RiskLevel enum values
+    const riskMap: Record<string, string> = {
+      low: 'require_confirm',
+      medium: 'require_confirm',
+      high: 'require_faceid',
+    };
+
     this.send('approval_request', {
       id: requestId,
       toolName: payload.toolName,
       toolInput: payload.toolInput,
-      riskLevel: payload.riskLevel,
+      riskLevel: riskMap[payload.riskLevel] ?? 'require_confirm',
+      macDeviceId: 'local',
       timestamp: new Date().toISOString(),
       timeoutAt: new Date(Date.now() + 120_000).toISOString(),
     });
