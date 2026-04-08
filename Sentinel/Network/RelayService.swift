@@ -17,6 +17,7 @@ final class RelayService {
     private let pairing: PairingService
 
     var onRequest: ((ApprovalRequest) -> Void)?
+    var onActivity: ((ActivityItem) -> Void)?
 
     init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
         self.socket = socket
@@ -52,6 +53,7 @@ final class RelayService {
             pairing: pairing
         )
         newTransport.onRequest = onRequest
+        newTransport.onActivity = onActivity
         transport = newTransport
 
         // Connect async
@@ -91,5 +93,11 @@ final class RelayService {
         Task {
             try? await transport.sendDecision(requestId: requestId, decision: decision)
         }
+    }
+
+    func sendUserMessage(_ text: String) {
+        guard let local = local as? LocalDiscoveryService else { return }
+        local.emit("user_message", dict: ["text": text])
+        log.info("User message sent: \(text.prefix(50))")
     }
 }

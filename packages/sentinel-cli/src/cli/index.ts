@@ -4,7 +4,7 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import qrcode from 'qrcode-terminal';
 import { ensureToken, loadToken, getStoredServerURL } from '../api/client';
-import { startHttpServer } from '../server/http';
+import { startHttpServer, setupUserMessageHandler } from '../server/http';
 import { installHook, uninstallHook } from '../install/setup';
 import { getRules, watchRules, setCustomRules, matchRules } from '../rules/engine';
 import { getPublicKeyBase64 } from '../crypto/keys';
@@ -98,6 +98,7 @@ program
 
     watchRules();
     await startHttpServer(port);
+    setupUserMessageHandler();
 
     console.log('');
     log.success('Sentinel is running. Press Ctrl+C to stop.\n');

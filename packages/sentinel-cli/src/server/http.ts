@@ -1,18 +1,25 @@
 import express from 'express';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
+import { spawn } from 'child_process';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'fs';
+import { join } from 'path';
 import { matchRules, riskToLevel } from '../rules/engine';
 import { getTransport } from '../transport/interface';
 import { pending } from '../relay/pending';
 import { appendLog } from '../lib/history';
 import { getOverrideState } from '../lib/overrides';
 import { isOverBudget } from '../lib/budget';
+import { summarize, summarizeStop } from '../lib/summarizer';
+import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
 
 const HookPayloadSchema = z.object({
   tool_name: z.string(),
   tool_input: z.record(z.unknown()),
 });
+
+const PENDING_MSG_PATH = join(getSentinelDir(), 'pending_message.txt');
 
 // SSE clients
 const sseClients = new Set<express.Response>();
@@ -24,10 +31,20 @@ export function pushEvent(data: Record<string, unknown>): void {
   }
 }
 
+/** Send activity event to iOS via transport */
+function sendActivity(type: string, data: Record<string, unknown>): void {
+  const transport = getTransport();
+  if (!transport?.isConnected) return;
+  if ('sendEvent' in transport && typeof (transport as any).sendEvent === 'function') {
+    (transport as any).sendEvent({ type, ...data, timestamp: new Date().toISOString() });
+  }
+}
+
 export function createHttpServer(port: number = 7749): express.Application {
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '1mb' }));
 
+  // ==================== PreToolUse hook ====================
   app.post('/hook', async (req, res) => {
     const parsed = HookPayloadSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -42,7 +59,7 @@ export function createHttpServer(port: number = 7749): express.Application {
 
     log.info(`Hook: ${tool_name}${filePath ? ` → ${filePath}` : ''}`);
 
-    // 0. Check overrides (highest priority)
+    // 0. Check overrides
     const overrides = getOverrideState();
     if (overrides.blockAll) {
       log.warn(`BLOCKED (override): ${tool_name}`);
@@ -57,10 +74,7 @@ export function createHttpServer(port: number = 7749): express.Application {
       return res.json({ decision: 'allow' });
     }
 
-    // 0.5 Budget warning (non-blocking, just logs)
-    if (isOverBudget()) {
-      log.warn(`⚠ Over daily budget!`);
-    }
+    if (isOverBudget()) log.warn('⚠ Over daily budget!');
 
     // 1. Local rules
     const match = matchRules(tool_name, filePath);
@@ -74,14 +88,13 @@ export function createHttpServer(port: number = 7749): express.Application {
     // 2. Check transport
     const transport = getTransport();
     if (!transport || !transport.isConnected) {
-      log.error(`${transport?.mode ?? 'no'} transport not connected — blocking`);
+      log.error(`${transport?.mode ?? 'no'} transport offline — blocking`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: 'offline', timestamp: ts });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'blocked', reason: 'offline' });
       return res.json({ decision: 'block', reason: 'Sentinel offline' });
     }
 
     try {
-      // 3. Send via transport
       const remoteId = await transport.sendApprovalRequest({
         toolName: tool_name,
         toolInput: tool_input as Record<string, unknown>,
@@ -89,8 +102,6 @@ export function createHttpServer(port: number = 7749): express.Application {
       });
 
       log.info(`[${transport.mode}] Waiting: ${remoteId}`);
-
-      // 4. Wait for decision
       const action = await pending.waitForDecision(remoteId, tool_name);
 
       appendLog({ id: remoteId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: action, timestamp: ts });
@@ -106,43 +117,120 @@ export function createHttpServer(port: number = 7749): express.Application {
     } catch (err) {
       log.error(`Hook error: ${(err as Error).message}`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: 'blocked', timestamp: ts });
-      pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'blocked', reason: 'error' });
       return res.json({ decision: 'block', reason: 'Internal error' });
     }
   });
 
-  // Notify endpoint — relay notification to iOS
+  // ==================== PostToolUse / Notification / Stop events ====================
+  app.post('/event', (req, res) => {
+    const body = req.body ?? {};
+    const hookEvent = body.hook_event_name ?? body.event ?? '';
+    const ts = new Date().toISOString();
+
+    if (hookEvent === 'PostToolUse' || hookEvent === 'post_tool_use') {
+      const toolName = body.tool_name ?? body.toolName ?? 'unknown';
+      const toolInput = body.tool_input ?? body.toolInput ?? {};
+      const toolResponse = typeof body.tool_response === 'string' ? body.tool_response : JSON.stringify(body.tool_response ?? '').slice(0, 200);
+      const summary = summarize(toolName, toolInput, toolResponse);
+
+      log.dim(`[event] ${toolName}: ${summary}`);
+      appendLog({ id: randomBytes(4).toString('hex'), toolName, filePath: (toolInput.file_path ?? toolInput.path ?? null) as string | null, riskLevel: 'completed', decision: 'completed', timestamp: ts, result: 'success', summary });
+      sendActivity('tool_completed', { toolName, summary });
+      pushEvent({ time: ts, type: 'tool_completed', tool: toolName, summary });
+
+    } else if (hookEvent === 'Notification' || hookEvent === 'notification') {
+      const message = body.message ?? body.text ?? '';
+      log.info(`[event] Notification: ${message}`);
+      sendActivity('notification', { message });
+
+      // Also send system notification
+      const transport = getTransport();
+      if (transport?.isConnected && 'sendNotification' in transport) {
+        (transport as any).sendNotification('Claude Code', message);
+      }
+      pushEvent({ time: ts, type: 'notification', message });
+
+    } else if (hookEvent === 'Stop' || hookEvent === 'stop') {
+      const stopReason = body.stop_reason ?? body.reason ?? 'completed';
+      const summary = summarizeStop(stopReason);
+      log.info(`[event] Stop: ${summary}`);
+      sendActivity('stop', { stopReason, summary });
+
+      // Send system notification (important — user may not be looking)
+      const transport = getTransport();
+      if (transport?.isConnected && 'sendNotification' in transport) {
+        const isError = stopReason === 'error';
+        (transport as any).sendNotification(
+          isError ? '❌ Claude Code' : '✅ Claude Code',
+          summary,
+        );
+      }
+      pushEvent({ time: ts, type: 'stop', stopReason, summary });
+
+      // Check for pending user message → auto-resume
+      if (existsSync(PENDING_MSG_PATH)) {
+        try {
+          const msg = readFileSync(PENDING_MSG_PATH, 'utf-8').trim();
+          unlinkSync(PENDING_MSG_PATH);
+          if (msg) {
+            log.info(`[event] Resuming Claude with message: ${msg.slice(0, 50)}...`);
+            const child = spawn('claude', ['--continue', '--print', msg], {
+              detached: true, stdio: 'ignore',
+            });
+            child.unref();
+          }
+        } catch {}
+      }
+
+    } else if (hookEvent === 'TaskCompleted' || hookEvent === 'task_completed') {
+      log.info('[event] Task completed');
+      sendActivity('task_completed', { summary: 'Sub-task completed' });
+      pushEvent({ time: ts, type: 'task_completed' });
+
+    } else if (hookEvent === 'SessionEnd' || hookEvent === 'session_end') {
+      log.info('[event] Session ended');
+      sendActivity('session_ended', { summary: 'Session ended' });
+      pushEvent({ time: ts, type: 'session_ended' });
+    }
+
+    res.json({ ok: true });
+  });
+
+  // ==================== Notify endpoint ====================
   app.post('/notify', (req, res) => {
     const { title, message } = req.body ?? {};
     if (!message) return res.status(400).json({ error: 'message required' });
-
     const transport = getTransport();
-    if (!transport || !transport.isConnected) {
-      return res.status(503).json({ error: 'iOS not connected' });
-    }
-
-    // Emit notification event via transport
-    if ('sendNotification' in transport && typeof (transport as any).sendNotification === 'function') {
+    if (!transport?.isConnected) return res.status(503).json({ error: 'iOS not connected' });
+    if ('sendNotification' in transport) {
       (transport as any).sendNotification(title ?? 'Sentinel', message);
     } else {
-      return res.status(501).json({ error: 'Notify not supported for this transport mode' });
+      return res.status(501).json({ error: 'Not supported' });
     }
-
-    log.info(`Notification sent: ${title ?? 'Sentinel'} — ${message}`);
+    log.info(`Notification: ${title ?? 'Sentinel'} — ${message}`);
     res.json({ success: true });
   });
 
-  // SSE endpoint for sentinel watch
+  // ==================== User message from iOS ====================
+  app.post('/user-message', (req, res) => {
+    const text = req.body?.text;
+    if (!text) return res.status(400).json({ error: 'text required' });
+    writeFileSync(PENDING_MSG_PATH, text);
+    log.info(`Pending message saved: ${text.slice(0, 50)}`);
+    res.json({ success: true });
+  });
+
+  // ==================== SSE ====================
   app.get('/events', (_req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
-
     sseClients.add(res);
     res.on('close', () => sseClients.delete(res));
   });
 
+  // ==================== Status ====================
   app.get('/status', (_req, res) => {
     const transport = getTransport();
     res.json({
@@ -162,10 +250,21 @@ export function startHttpServer(port: number = 7749): Promise<void> {
     const app = createHttpServer(port);
     app.listen(port, () => {
       log.success(`Hook server listening on http://localhost:${port}`);
-      log.dim(`  POST /hook    — Claude Code PreToolUse endpoint`);
-      log.dim(`  GET  /status  — Sentinel status`);
-      log.dim(`  GET  /events  — SSE stream (sentinel watch)`);
+      log.dim(`  POST /hook    — PreToolUse (approval)`);
+      log.dim(`  POST /event   — PostToolUse / Notification / Stop`);
+      log.dim(`  GET  /events  — SSE stream`);
       resolve();
     });
   });
+}
+
+/** Setup user message handler from LocalTransport */
+export function setupUserMessageHandler(): void {
+  const transport = getTransport();
+  if (transport && 'onUserMessage' in transport) {
+    (transport as any).onUserMessage((text: string) => {
+      writeFileSync(PENDING_MSG_PATH, text);
+      log.info(`Message from iOS saved: ${text.slice(0, 50)}`);
+    });
+  }
 }

@@ -8,6 +8,7 @@ final class LocalTransport: TransportProtocol {
     private let discovery: LocalDiscoveryService
 
     var onRequest: ((ApprovalRequest) -> Void)?
+    var onActivity: ((ActivityItem) -> Void)?
 
     init(discovery: LocalDiscoveryService) {
         self.discovery = discovery
@@ -50,12 +51,27 @@ final class LocalTransport: TransportProtocol {
                 }
 
             case "notification":
-                // Mac sent a custom notification (sentinel notify "message")
                 if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                     let title = dict["title"] as? String ?? "Sentinel"
                     let message = dict["message"] as? String ?? ""
                     NotificationService.shared.postSimpleNotification(title: title, body: message)
                     log.info("Notification: \(title) — \(message)")
+                }
+
+            case "activity":
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let typeStr = dict["type"] as? String ?? ""
+                    let type = ActivityType(rawValue: typeStr) ?? .toolCompleted
+                    let item = ActivityItem(
+                        id: UUID().uuidString,
+                        type: type,
+                        summary: dict["summary"] as? String ?? dict["message"] as? String ?? typeStr,
+                        toolName: dict["toolName"] as? String,
+                        timestamp: Date(),
+                        stopReason: dict["stopReason"] as? String,
+                        message: dict["message"] as? String
+                    )
+                    self?.onActivity?(item)
                 }
 
             default:

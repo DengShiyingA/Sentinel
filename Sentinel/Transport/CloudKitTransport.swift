@@ -10,6 +10,7 @@ final class CloudKitTransport: TransportProtocol {
     private var pollTask: Task<Void, Never>?
 
     var onRequest: ((ApprovalRequest) -> Void)?
+    var onActivity: ((ActivityItem) -> Void)?
     private(set) var isConnected = false
     private var processedIds = Set<String>()
 

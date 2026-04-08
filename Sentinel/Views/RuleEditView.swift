@@ -23,34 +23,42 @@ struct RuleEditView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section(String(localized: "工具类型")) {
+                Section {
                     Picker(String(localized: "工具"), selection: $toolType) {
                         ForEach(ToolType.allCases) { type in
                             Label(type.label, systemImage: type.systemImage).tag(type)
                         }
                     }
+                } header: {
+                    Text(String(localized: "工具类型"))
                 }
 
-                Section(String(localized: "路径匹配")) {
+                Section {
                     TextField(String(localized: "如 *.env, /secrets/*（可选）"), text: $pathPattern)
                         .font(.body.monospaced())
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
+                } header: {
+                    Text(String(localized: "路径匹配"))
                 } footer: {
                     Text(String(localized: "留空表示匹配所有路径，支持 * 和 ** 通配符"))
                 }
 
-                Section(String(localized: "风险等级")) {
+                Section {
                     Picker(String(localized: "操作"), selection: $riskLevel) {
                         ForEach(RiskOption.allCases) { level in
                             Text(level.label).tag(level)
                         }
                     }
                     .pickerStyle(.inline)
+                } header: {
+                    Text(String(localized: "风险等级"))
                 }
 
-                Section(String(localized: "描述")) {
+                Section {
                     TextField(String(localized: "规则用途说明"), text: $description)
+                } header: {
+                    Text(String(localized: "描述"))
                 }
             }
             .navigationTitle(existingRule == nil ? String(localized: "新建规则") : String(localized: "编辑规则"))

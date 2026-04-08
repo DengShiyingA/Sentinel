@@ -10,6 +10,7 @@ final class ServerTransport: TransportProtocol {
     private let deviceId: String
 
     var onRequest: ((ApprovalRequest) -> Void)?
+    var onActivity: ((ActivityItem) -> Void)?
 
     init(socket: SocketClient, serverURL: String, deviceId: String) {
         self.socket = socket

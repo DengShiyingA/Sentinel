@@ -5,8 +5,6 @@ struct ContentView: View {
     @Environment(RelayService.self) private var relay
 
     var body: some View {
-        // Always show MainTabView — pairing is handled inside SettingsView/PairingView
-        // Never remove the tab hierarchy based on mode changes
         MainTabView()
     }
 }
@@ -22,9 +20,15 @@ struct MainTabView: View {
                 }
                 .badge(store.pendingRequests.count)
 
+            ActivityFeedView()
+                .tabItem {
+                    Label(String(localized: "活动"), systemImage: "list.bullet.rectangle")
+                }
+                .badge(store.newActivityCount > 0 ? store.newActivityCount : 0)
+
             RulesView()
                 .tabItem {
-                    Label(String(localized: "规则"), systemImage: "list.bullet.rectangle")
+                    Label(String(localized: "规则"), systemImage: "slider.horizontal.3")
                 }
 
             SettingsView()

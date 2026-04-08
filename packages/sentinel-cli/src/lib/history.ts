@@ -12,6 +12,8 @@ export interface LogEntry {
   riskLevel: string;
   decision: string;   // 'allowed' | 'blocked' | 'timeout' | 'auto_allow' | 'offline'
   timestamp: string;   // ISO 8601
+  result?: string;     // 'success' | 'error' (for PostToolUse)
+  summary?: string;    // human-readable summary
 }
 
 function loadHistory(): LogEntry[] {

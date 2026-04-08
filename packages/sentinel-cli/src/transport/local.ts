@@ -28,6 +28,7 @@ export class LocalTransport implements Transport {
   private buffer = '';
   private decisionCb: ((id: string, action: 'allowed' | 'blocked' | 'timeout') => void) | null = null;
   private rulesUpdateCb: ((rules: Rule[]) => void) | null = null;
+  private userMessageCb: ((text: string) => void) | null = null;
 
   get isConnected(): boolean {
     return this.iosSocket !== null && !this.iosSocket.destroyed;
@@ -118,6 +119,12 @@ export class LocalTransport implements Transport {
         log.info(`[local] Rules update from iOS: ${rules.length} custom rules`);
         this.rulesUpdateCb?.(rules);
       }
+    } else if (msg.event === 'user_message') {
+      const text = msg.data?.text as string | undefined;
+      if (text) {
+        log.info(`[local] Message from iOS: ${text}`);
+        this.userMessageCb?.(text);
+      }
     } else if (msg.event === 'heartbeat_ack') {
       // iOS responded to heartbeat
     }
@@ -126,6 +133,11 @@ export class LocalTransport implements Transport {
   /** Send a notification to iOS */
   sendNotification(title: string, message: string): void {
     this.send('notification', { title, message });
+  }
+
+  /** Send an activity event to iOS (fire-and-forget, no response needed) */
+  sendEvent(data: Record<string, unknown>): void {
+    this.send('activity', data);
   }
 
   /** Send a JSON message to connected iOS */
@@ -166,6 +178,11 @@ export class LocalTransport implements Transport {
   /** Register callback for rules updates from iOS */
   onRulesUpdate(cb: (rules: Rule[]) => void): void {
     this.rulesUpdateCb = cb;
+  }
+
+  /** Register callback for user messages from iOS */
+  onUserMessage(cb: (text: string) => void): void {
+    this.userMessageCb = cb;
   }
 
   stop(): void {
