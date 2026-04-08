@@ -8,7 +8,6 @@ struct ActivityFeedView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Status bar
                 statusBar
 
                 if store.activityFeed.isEmpty {
@@ -24,8 +23,6 @@ struct ActivityFeedView: View {
             .onAppear { store.clearNewActivityCount() }
         }
     }
-
-    // MARK: - Status Bar
 
     private var statusBar: some View {
         HStack {
@@ -49,16 +46,19 @@ struct ActivityFeedView: View {
         .background(.bar)
     }
 
-    // MARK: - Feed List
-
     private var feedList: some View {
         List(store.activityFeed) { item in
-            ActivityRow(item: item)
+            NavigationLink(value: item.id) {
+                ActivityRow(item: item)
+            }
         }
         .listStyle(.plain)
+        .navigationDestination(for: String.self) { id in
+            if let item = store.activityFeed.first(where: { $0.id == id }) {
+                ActivityDetailView(item: item)
+            }
+        }
     }
-
-    // MARK: - Empty State
 
     private var emptyState: some View {
         ContentUnavailableView {
@@ -67,8 +67,6 @@ struct ActivityFeedView: View {
             Text(String(localized: "Claude Code 的操作记录会显示在这里"))
         }
     }
-
-    // MARK: - Message Input
 
     private var messageInput: some View {
         HStack(spacing: 8) {
@@ -94,21 +92,11 @@ struct ActivityFeedView: View {
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-
         store.sendUserMessage(text)
-
-        // Add to local feed
-        let item = ActivityItem(
-            id: UUID().uuidString,
-            type: .userMessage,
-            summary: text,
-            toolName: nil,
-            timestamp: Date(),
-            stopReason: nil,
-            message: text
-        )
-        store.activityFeed.insert(item, at: 0)
-
+        store.activityFeed.insert(ActivityItem(
+            id: UUID().uuidString, type: .userMessage, summary: text,
+            toolName: nil, timestamp: Date(), stopReason: nil, message: text
+        ), at: 0)
         messageText = ""
     }
 }
@@ -150,7 +138,7 @@ struct ActivityRow: View {
         case .toolCompleted:
             switch item.toolName {
             case "Write", "Edit": return "doc.badge.plus"
-            case "Bash": return item.isError ? "terminal" : "terminal"
+            case "Bash": return "terminal"
             case "Read": return "doc.text"
             default: return "checkmark.circle"
             }
@@ -172,6 +160,84 @@ struct ActivityRow: View {
         case .taskCompleted: return .green
         case .sessionEnded: return .gray
         case .userMessage: return .blue
+        }
+    }
+}
+
+// MARK: - Activity Detail View
+
+struct ActivityDetailView: View {
+    let item: ActivityItem
+
+    var body: some View {
+        List {
+            // Header
+            Section {
+                HStack(spacing: 14) {
+                    Image(systemName: item.type.systemImage)
+                        .font(.title2)
+                        .foregroundStyle(headerColor)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.type.label)
+                            .font(.headline)
+                        Text(item.summary)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            // Details
+            Section {
+                if let tool = item.toolName {
+                    LabeledContent(String(localized: "工具")) {
+                        Text(tool).font(.body.monospaced())
+                    }
+                }
+
+                LabeledContent(String(localized: "类型")) {
+                    Text(item.type.label)
+                }
+
+                LabeledContent(String(localized: "时间")) {
+                    Text(item.timestamp.formatted(date: .abbreviated, time: .standard))
+                }
+
+                if let reason = item.stopReason {
+                    LabeledContent(String(localized: "停止原因")) {
+                        Text(reason)
+                            .foregroundStyle(reason == "error" ? .red : .green)
+                    }
+                }
+            } header: {
+                Text(String(localized: "详情"))
+            }
+
+            // Message content
+            if let message = item.message, !message.isEmpty {
+                Section {
+                    Text(message)
+                        .font(.body)
+                        .textSelection(.enabled)
+                } header: {
+                    Text(String(localized: "内容"))
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle(item.toolName ?? item.type.label)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var headerColor: Color {
+        switch item.type {
+        case .toolCompleted: .blue
+        case .notification: .orange
+        case .stop: item.isError ? .red : .green
+        case .taskCompleted: .green
+        case .sessionEnded: .gray
+        case .userMessage: .blue
         }
     }
 }
