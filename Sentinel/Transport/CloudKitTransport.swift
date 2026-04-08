@@ -11,6 +11,7 @@ final class CloudKitTransport: TransportProtocol {
 
     var onRequest: ((ApprovalRequest) -> Void)?
     var onActivity: ((ActivityItem) -> Void)?
+    var onDecisionSync: ((String) -> Void)?
     private(set) var isConnected = false
     private var processedIds = Set<String>()
 

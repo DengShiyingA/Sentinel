@@ -2,7 +2,7 @@ import { Socket } from 'socket.io';
 import { z } from 'zod';
 import { createId } from '@paralleldrive/cuid2';
 import { findDeviceById, createApproval, resolveApproval, findApprovalById } from '../../db/client';
-import { relay } from '../hub';
+import { relay, broadcastToIosDevices } from '../hub';
 import { sendApprovalPush } from '../../apns/sender';
 import { config } from '../../lib/config';
 import { logger } from '../../lib/logger';
@@ -132,7 +132,15 @@ export function registerApprovalHandlers(socket: Socket): void {
 
       const approval = await findApprovalById(requestId);
       if (approval) {
+        // Relay decision to Mac
         relay(approval.macDeviceId, 'decision', { requestId, action });
+
+        // Broadcast decision_sync to other iOS devices
+        broadcastToIosDevices(approval.macDeviceId, 'decision_sync', {
+          requestId,
+          decision: action,
+          decidedBy: deviceId,
+        }, deviceId);
       }
 
       logger.info({ requestId, action }, 'Decision recorded');

@@ -9,6 +9,7 @@ final class LocalTransport: TransportProtocol {
 
     var onRequest: ((ApprovalRequest) -> Void)?
     var onActivity: ((ActivityItem) -> Void)?
+    var onDecisionSync: ((String) -> Void)?
 
     init(discovery: LocalDiscoveryService) {
         self.discovery = discovery

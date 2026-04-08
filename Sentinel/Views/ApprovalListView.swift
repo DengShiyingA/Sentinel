@@ -19,6 +19,18 @@ struct ApprovalListView: View {
                     connectionIndicator
                 }
             }
+            .overlay(alignment: .top) {
+                if let toast = store.syncToast {
+                    Text(toast)
+                        .font(.subheadline.weight(.medium))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .padding(.top, 8)
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                        .animation(.spring(duration: 0.3), value: store.syncToast)
+                }
+            }
         }
     }
 

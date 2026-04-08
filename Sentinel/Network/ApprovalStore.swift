@@ -18,12 +18,36 @@ final class ApprovalStore {
         setupRelay()
     }
 
+    /// Toast message shown briefly when another device handles a request
+    var syncToast: String?
+
     private func setupRelay() {
         relay.onRequest = { [weak self] request in
             self?.handleIncomingRequest(request)
         }
         relay.onActivity = { [weak self] item in
             self?.handleActivity(item)
+        }
+        relay.onDecisionSync = { [weak self] requestId in
+            self?.handleDecisionSync(requestId)
+        }
+    }
+
+    // MARK: - Decision Sync (multi-device)
+
+    private func handleDecisionSync(_ requestId: String) {
+        Task { @MainActor in
+            guard self.pendingRequests.contains(where: { $0.id == requestId }) else { return }
+            self.removeRequest(id: requestId)
+            self.resolvedCount += 1
+
+            // Show toast
+            self.syncToast = String(localized: "已由其他设备处理")
+            log.info("Decision sync: \(requestId) removed (handled by other device)")
+
+            // Auto-dismiss toast
+            try? await Task.sleep(for: .seconds(2))
+            if self.syncToast != nil { self.syncToast = nil }
         }
     }
 

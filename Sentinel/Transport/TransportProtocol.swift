@@ -6,6 +6,7 @@ protocol TransportProtocol: AnyObject {
     var isConnected: Bool { get }
     var onRequest: ((ApprovalRequest) -> Void)? { get set }
     var onActivity: ((ActivityItem) -> Void)? { get set }
+    var onDecisionSync: ((String) -> Void)? { get set }  // requestId resolved by another device
 
     func connect() async throws
     func disconnect()
