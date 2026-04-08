@@ -5,6 +5,7 @@ import type { Transport, ApprovalPayload } from './interface';
 import { pending } from '../relay/pending';
 import { log } from '../lib/logger';
 import { networkInterfaces } from 'os';
+import type { Rule } from '../rules/engine';
 
 const TCP_PORT = 7750;
 const SERVICE_TYPE = 'sentinel';
@@ -26,6 +27,7 @@ export class LocalTransport implements Transport {
   private iosSocket: net.Socket | null = null;
   private buffer = '';
   private decisionCb: ((id: string, action: 'allowed' | 'blocked' | 'timeout') => void) | null = null;
+  private rulesUpdateCb: ((rules: Rule[]) => void) | null = null;
 
   get isConnected(): boolean {
     return this.iosSocket !== null && !this.iosSocket.destroyed;
@@ -110,6 +112,12 @@ export class LocalTransport implements Transport {
       log.info(`[local] Decision: ${requestId} → ${action}`);
       pending.resolve(requestId, action);
       this.decisionCb?.(requestId, action);
+    } else if (msg.event === 'rules_update') {
+      const rules = msg.data?.rules as Rule[] | undefined;
+      if (rules) {
+        log.info(`[local] Rules update from iOS: ${rules.length} custom rules`);
+        this.rulesUpdateCb?.(rules);
+      }
     } else if (msg.event === 'heartbeat_ack') {
       // iOS responded to heartbeat
     }
@@ -140,6 +148,11 @@ export class LocalTransport implements Transport {
 
   onDecision(cb: (id: string, action: 'allowed' | 'blocked' | 'timeout') => void): void {
     this.decisionCb = cb;
+  }
+
+  /** Register callback for rules updates from iOS */
+  onRulesUpdate(cb: (rules: Rule[]) => void): void {
+    this.rulesUpdateCb = cb;
   }
 
   stop(): void {

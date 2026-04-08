@@ -6,7 +6,7 @@ import qrcode from 'qrcode-terminal';
 import { ensureToken, loadToken, getStoredServerURL } from '../api/client';
 import { startHttpServer } from '../server/http';
 import { installHook, uninstallHook } from '../install/setup';
-import { getRules, watchRules } from '../rules/engine';
+import { getRules, watchRules, setCustomRules } from '../rules/engine';
 import { getPublicKeyBase64 } from '../crypto/keys';
 import { pending } from '../relay/pending';
 import { setTransport, getTransport, type TransportMode } from '../transport/interface';
@@ -72,6 +72,7 @@ program
       if (transport instanceof LocalTransport) {
         const info = transport.getConnectionInfo();
         log.info(`iOS can connect to: ${info.ip}:${info.port}`);
+        transport.onRulesUpdate((rules) => setCustomRules(rules));
       }
     }
 

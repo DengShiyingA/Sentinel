@@ -118,6 +118,23 @@ export function getRules(): Rule[] {
   return loadRules();
 }
 
+// ==================== Custom Rules (from iOS) ====================
+
+let iosCustomRules: Rule[] = [];
+
+/** Set custom rules received from iOS (merged with file rules) */
+export function setCustomRules(rules: Rule[]): void {
+  iosCustomRules = rules.map((r, i) => ({
+    ...r,
+    id: r.id ?? `ios-custom-${i}`,
+    priority: r.priority ?? 0,
+    risk: (r.risk ?? 'require_confirm') as RiskAction,
+    description: r.description ?? '',
+  }));
+  cachedRules = null; // invalidate cache to merge on next load
+  log.info(`Custom rules from iOS: ${iosCustomRules.length}`);
+}
+
 /** Watch rules.json for changes and auto-reload */
 export function watchRules(): void {
   // Ensure file exists first
@@ -167,7 +184,8 @@ export function matchRules(
   toolName: string,
   filePath: string | null,
 ): RuleMatchResult {
-  const rules = loadRules().sort((a, b) => a.priority - b.priority);
+  // Merge: iOS custom rules (priority 0) + file rules, sorted by priority
+  const rules = [...iosCustomRules, ...loadRules()].sort((a, b) => a.priority - b.priority);
 
   for (const rule of rules) {
     let toolMatch = true;
