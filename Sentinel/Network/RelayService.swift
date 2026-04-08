@@ -3,43 +3,48 @@ import OSLog
 
 private let log = Logger(subsystem: "com.sentinel.ios", category: "RelayService")
 
-/// Manages the active TransportProtocol. Handles mode switching at runtime
-/// without requiring app restart.
 @Observable
 final class RelayService {
-    private(set) var currentMode: ConnectionMode = ConnectionMode.current
-    private(set) var transport: TransportProtocol?
-    var isConnected: Bool { transport?.isConnected ?? false }
+    private(set) var currentMode: ConnectionMode
+    private(set) var isConnected = false
+    private(set) var connectionError: String?
+
+    private var transport: TransportProtocol?
+    private var connectTask: Task<Void, Never>?
 
     private let socket: SocketClient
     private let local: LocalDiscoveryService
     private let pairing: PairingService
 
-    /// Forwarded to ApprovalStore
-    var onRequest: ((ApprovalRequest) -> Void)? {
-        didSet { transport?.onRequest = onRequest }
-    }
+    var onRequest: ((ApprovalRequest) -> Void)?
 
     init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
         self.socket = socket
         self.local = local
         self.pairing = pairing
+        self.currentMode = ConnectionMode.current
     }
 
-    /// Connect using the persisted mode
     func connectCurrentMode() {
-        switchMode(ConnectionMode.current)
+        switchMode(currentMode)
     }
 
-    /// Switch to a new mode: disconnect old, connect new
     func switchMode(_ mode: ConnectionMode) {
-        // Disconnect old
+        // Cancel any pending connect
+        connectTask?.cancel()
+
+        // Tear down old
+        transport?.onRequest = nil
         transport?.disconnect()
         transport = nil
+        isConnected = false
+        connectionError = nil
+
+        // Update mode
         currentMode = mode
         ConnectionMode.current = mode
 
-        // Create new
+        // Create new transport
         let newTransport = TransportFactory.makeTransport(
             mode: mode,
             socket: socket,
@@ -49,8 +54,8 @@ final class RelayService {
         newTransport.onRequest = onRequest
         transport = newTransport
 
-        // Connect async with timeout — never block UI
-        Task.detached { [weak self] in
+        // Connect async
+        connectTask = Task { [weak self] in
             do {
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     group.addTask { try await newTransport.connect() }
@@ -58,29 +63,25 @@ final class RelayService {
                         try await Task.sleep(for: .seconds(10))
                         throw CancellationError()
                     }
-                    // First to finish wins, cancel the other
                     try await group.next()
                     group.cancelAll()
                 }
+                await MainActor.run { self?.isConnected = true }
                 log.info("Connected via \(mode.rawValue)")
+            } catch is CancellationError {
+                log.warning("Connect timeout (\(mode.rawValue))")
+                await MainActor.run { self?.connectionError = "连接超时" }
             } catch {
-                log.error("Connect failed (\(mode.rawValue)): \(error.localizedDescription)")
+                log.error("Connect failed: \(error.localizedDescription)")
+                await MainActor.run { self?.connectionError = error.localizedDescription }
             }
         }
     }
 
-    /// Send decision via active transport
     func sendDecision(requestId: String, decision: Decision) {
-        guard let transport else {
-            log.error("No transport — cannot send decision")
-            return
-        }
+        guard let transport else { return }
         Task {
-            do {
-                try await transport.sendDecision(requestId: requestId, decision: decision)
-            } catch {
-                log.error("sendDecision failed: \(error.localizedDescription)")
-            }
+            try? await transport.sendDecision(requestId: requestId, decision: decision)
         }
     }
 }

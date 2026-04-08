@@ -4,62 +4,52 @@ import OSLog
 
 private let log = Logger(subsystem: "com.sentinel.ios", category: "CloudKitTransport")
 
-/// CloudKit transport — uses iCloud private database for Mac ↔ iOS messaging.
-///
-/// - Mac writes ApprovalRequest records (via CloudKit Web Services)
-/// - iOS subscribes to new records via CKQuerySubscription
-/// - iOS writes Decision records
-/// - Mac polls for Decision records
 final class CloudKitTransport: TransportProtocol {
-    private let database: CKDatabase
-    private var subscription: CKQuerySubscription?
+    // Lazy — don't access CKContainer until connect() is called
+    private var database: CKDatabase?
     private var pollTask: Task<Void, Never>?
 
     var onRequest: ((ApprovalRequest) -> Void)?
     private(set) var isConnected = false
     private var processedIds = Set<String>()
 
-    init() {
-        self.database = CKContainer(identifier: "iCloud.com.sentinel.app").privateCloudDatabase
-    }
-
     func connect() async throws {
-        // Verify account access — gracefully handle missing entitlement
+        let container = CKContainer(identifier: "iCloud.com.sentinel.app")
+
         do {
-            let status = try await CKContainer(identifier: "iCloud.com.sentinel.app").accountStatus()
+            let status = try await container.accountStatus()
             guard status == .available else {
                 throw TransportError.iCloudUnavailable
             }
-        } catch let error as TransportError {
-            throw error
+        } catch is TransportError {
+            throw TransportError.iCloudUnavailable
         } catch {
-            log.error("CloudKit account check failed: \(error.localizedDescription)")
+            log.error("CloudKit check failed: \(error.localizedDescription)")
             throw TransportError.iCloudUnavailable
         }
 
-        // Subscribe (best-effort, don't block if it fails)
-        Task { await self.setupSubscription() }
+        database = container.privateCloudDatabase
+        isConnected = true
+        log.info("CloudKit connected")
 
-        // Start polling as fallback
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.pollRequests()
                 try? await Task.sleep(for: .seconds(2))
             }
         }
-
-        isConnected = true
-        log.info("CloudKit transport connected")
     }
 
     func disconnect() {
         pollTask?.cancel()
         pollTask = nil
         isConnected = false
-        log.info("CloudKit transport disconnected")
+        database = nil
     }
 
     func sendDecision(requestId: String, decision: Decision) async throws {
+        guard let database else { throw TransportError.iCloudUnavailable }
+
         let record = CKRecord(recordType: "Decision")
         record["requestId"] = requestId as CKRecordValue
         record["action"] = (decision == .allowed ? "allow" : "block") as CKRecordValue
@@ -67,35 +57,11 @@ final class CloudKitTransport: TransportProtocol {
         record["timestamp"] = Date() as CKRecordValue
 
         try await database.save(record)
-        log.info("Decision saved to CloudKit: \(requestId) → \(decision.rawValue)")
     }
-
-    // MARK: - Subscription
-
-    private func setupSubscription() async {
-        let predicate = NSPredicate(format: "status == %@", "pending")
-        let subscription = CKQuerySubscription(
-            recordType: "ApprovalRequest",
-            predicate: predicate,
-            options: [.firesOnRecordCreation]
-        )
-
-        let info = CKSubscription.NotificationInfo()
-        info.shouldSendContentAvailable = true
-        subscription.notificationInfo = info
-
-        do {
-            try await database.save(subscription)
-            self.subscription = subscription
-            log.info("CloudKit subscription created")
-        } catch {
-            log.error("Failed to create subscription: \(error.localizedDescription)")
-        }
-    }
-
-    // MARK: - Polling
 
     private func pollRequests() async {
+        guard let database else { return }
+
         let predicate = NSPredicate(format: "status == %@", "pending")
         let query = CKQuery(recordType: "ApprovalRequest", predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: false)]
@@ -106,9 +72,8 @@ final class CloudKitTransport: TransportProtocol {
             for (_, result) in results {
                 guard let record = try? result.get() else { continue }
                 let recordId = record.recordID.recordName
-
                 guard !processedIds.contains(recordId) else { continue }
-                processedIds.add(recordId)
+                processedIds.insert(recordId)
 
                 guard let requestId = record["requestId"] as? String,
                       let toolName = record["toolName"] as? String,
@@ -127,36 +92,20 @@ final class CloudKitTransport: TransportProtocol {
                     toolInput = [:]
                 }
 
-                let riskLevel = riskLevelRaw == "high" ? RiskLevel.requireFaceID : .requireConfirm
-
                 let request = ApprovalRequest(
                     id: requestId,
                     toolName: toolName,
                     toolInput: toolInput,
-                    riskLevel: riskLevel,
+                    riskLevel: riskLevelRaw == "high" ? .requireFaceID : .requireConfirm,
                     timestamp: Date(timeIntervalSince1970: Double(timestamp) / 1000),
                     macDeviceId: "cloudkit",
                     timeoutAt: Date(timeIntervalSince1970: Double(timeoutAt) / 1000)
                 )
 
                 onRequest?(request)
-                log.info("CloudKit request: \(requestId) tool=\(toolName)")
             }
         } catch {
-            log.debug("CloudKit poll error: \(error.localizedDescription)")
-        }
-    }
-}
-
-// MARK: - Helpers
-
-private extension Set where Element == String {
-    mutating func add(_ member: String) {
-        insert(member)
-        // Keep set bounded
-        if count > 500 {
-            let excess = count - 200
-            for id in prefix(excess) { remove(id) }
+            log.debug("Poll error: \(error.localizedDescription)")
         }
     }
 }

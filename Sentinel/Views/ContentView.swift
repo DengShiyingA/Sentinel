@@ -5,13 +5,9 @@ struct ContentView: View {
     @Environment(RelayService.self) private var relay
 
     var body: some View {
-        // Local/CloudKit: always show main UI (no pairing needed)
-        // Server: require pairing first
-        if ConnectionMode.current != .server || pairing.isPaired {
-            MainTabView()
-        } else {
-            PairingView()
-        }
+        // Always show MainTabView — pairing is handled inside SettingsView/PairingView
+        // Never remove the tab hierarchy based on mode changes
+        MainTabView()
     }
 }
 
@@ -20,18 +16,21 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            Tab(String(localized: "审批"), systemImage: "checkmark.shield") {
-                ApprovalListView()
-            }
-            .badge(store.pendingRequests.count)
+            ApprovalListView()
+                .tabItem {
+                    Label(String(localized: "审批"), systemImage: "checkmark.shield")
+                }
+                .badge(store.pendingRequests.count)
 
-            Tab(String(localized: "规则"), systemImage: "list.bullet.rectangle") {
-                RulesView()
-            }
+            RulesView()
+                .tabItem {
+                    Label(String(localized: "规则"), systemImage: "list.bullet.rectangle")
+                }
 
-            Tab(String(localized: "设置"), systemImage: "gearshape") {
-                SettingsView()
-            }
+            SettingsView()
+                .tabItem {
+                    Label(String(localized: "设置"), systemImage: "gearshape")
+                }
         }
     }
 }

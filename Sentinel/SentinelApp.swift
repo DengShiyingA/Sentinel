@@ -2,29 +2,24 @@ import SwiftUI
 
 @main
 struct SentinelApp: App {
-    @State private var pairing = PairingService()
-    @State private var socket = SocketClient()
-    @State private var local = LocalDiscoveryService()
+    @State private var pairing: PairingService
+    @State private var socket: SocketClient
+    @State private var local: LocalDiscoveryService
     @State private var relay: RelayService
     @State private var store: ApprovalStore
 
     init() {
-        let socketClient = SocketClient()
-        let localService = LocalDiscoveryService()
-        let pairingService = PairingService()
+        let p = PairingService()
+        let s = SocketClient()
+        let l = LocalDiscoveryService()
+        let r = RelayService(socket: s, local: l, pairing: p)
+        let a = ApprovalStore(relay: r)
 
-        let relayService = RelayService(
-            socket: socketClient,
-            local: localService,
-            pairing: pairingService
-        )
-        let approvalStore = ApprovalStore(relay: relayService)
-
-        _socket = State(initialValue: socketClient)
-        _local = State(initialValue: localService)
-        _pairing = State(initialValue: pairingService)
-        _relay = State(initialValue: relayService)
-        _store = State(initialValue: approvalStore)
+        _pairing = State(initialValue: p)
+        _socket = State(initialValue: s)
+        _local = State(initialValue: l)
+        _relay = State(initialValue: r)
+        _store = State(initialValue: a)
 
         NotificationService.shared.setup()
     }
@@ -38,18 +33,14 @@ struct SentinelApp: App {
                 .environment(relay)
                 .environment(store)
                 .onAppear {
-                    relay.connectCurrentMode()
-                    setupNotificationActions()
+                    // Delay slightly to let SwiftUI finish layout first
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        relay.connectCurrentMode()
+                    }
+                    NotificationService.shared.onNotificationAction = { [store] id, decision in
+                        store.sendDecision(requestId: id, decision: decision)
+                    }
                 }
-                .onOpenURL { url in
-                    guard url.scheme == "sentinel", url.host == "pair" else { return }
-                }
-        }
-    }
-
-    private func setupNotificationActions() {
-        NotificationService.shared.onNotificationAction = { [store] requestId, decision in
-            store.sendDecision(requestId: requestId, decision: decision)
         }
     }
 }

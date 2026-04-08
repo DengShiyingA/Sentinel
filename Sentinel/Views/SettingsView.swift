@@ -8,6 +8,7 @@ struct SettingsView: View {
     @Environment(ApprovalStore.self) private var store
 
     @State private var showUnpairAlert = false
+    @State private var showPairingSheet = false
     @State private var connectionMode = ConnectionMode.current
 
     var body: some View {
@@ -29,9 +30,7 @@ struct SettingsView: View {
 
                 // Connection status
                 Section(String(localized: "连接")) {
-                    HStack {
-                        Text(String(localized: "状态"))
-                        Spacer()
+                    LabeledContent(String(localized: "状态")) {
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(relay.isConnected ? .green : .red)
@@ -43,52 +42,45 @@ struct SettingsView: View {
                         }
                     }
 
-                    // Mode-specific details
-                    switch connectionMode {
-                    case .local:
+                    if connectionMode == .local {
                         if let host = local.discoveredHost {
                             LabeledContent(String(localized: "Mac")) {
                                 Text(host).font(.caption.monospaced()).foregroundStyle(.secondary)
                             }
                         }
                         if local.isSearching {
-                            HStack {
-                                Text(String(localized: "搜索中"))
-                                Spacer()
+                            LabeledContent(String(localized: "搜索中")) {
                                 ProgressView()
                             }
                         }
+                    }
 
-                    case .cloudkit:
-                        LabeledContent(String(localized: "同步方式")) {
-                            Text("iCloud Private Database")
-                                .font(.caption).foregroundStyle(.secondary)
+                    if connectionMode == .cloudkit {
+                        LabeledContent(String(localized: "同步")) {
+                            Text("iCloud").foregroundStyle(.secondary)
                         }
+                    }
 
-                    case .server:
-                        if let error = socket.connectionError {
-                            HStack {
-                                Text(String(localized: "错误"))
-                                Spacer()
-                                Text(error).font(.caption).foregroundStyle(.red)
+                    if connectionMode == .server {
+                        if pairing.isPaired {
+                            LabeledContent(String(localized: "服务器")) {
+                                Text(pairing.serverURL)
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
+                        } else {
+                            Button {
+                                showPairingSheet = true
+                            } label: {
+                                Label(String(localized: "配对服务器"), systemImage: "qrcode")
                             }
                         }
                     }
-                }
 
-                // Server info (server mode only)
-                if connectionMode == .server {
-                    Section(String(localized: "服务器")) {
-                        LabeledContent(String(localized: "地址")) {
-                            Text(pairing.serverURL)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                        }
-                        LabeledContent(String(localized: "Mac 设备")) {
-                            Text(pairing.macDeviceId.prefix(8) + "...")
-                                .font(.caption.monospaced())
-                                .foregroundStyle(.secondary)
+                    if let error = relay.connectionError {
+                        LabeledContent(String(localized: "错误")) {
+                            Text(error).font(.caption).foregroundStyle(.red)
                         }
                     }
                 }
@@ -111,8 +103,6 @@ struct SettingsView: View {
                         } label: {
                             Label(String(localized: "解除配对"), systemImage: "link.badge.plus")
                         }
-                    } footer: {
-                        Text(String(localized: "解除配对将断开与 Mac 的连接，需要重新配对"))
                     }
                 }
 
@@ -120,10 +110,6 @@ struct SettingsView: View {
                 Section(String(localized: "关于")) {
                     LabeledContent(String(localized: "版本")) {
                         Text("0.1.0").foregroundStyle(.secondary)
-                    }
-                    LabeledContent("Sentinel") {
-                        Text("Claude Code Rule Engine")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -136,7 +122,10 @@ struct SettingsView: View {
                     pairing.unpair()
                 }
             } message: {
-                Text(String(localized: "确定要解除与 Mac 的配对吗？所有密钥将被删除。"))
+                Text(String(localized: "确定要解除配对吗？"))
+            }
+            .sheet(isPresented: $showPairingSheet) {
+                PairingView()
             }
         }
     }
