@@ -1,19 +1,42 @@
 import SwiftUI
 
-struct ApprovalListView: View {
+/// Unified dashboard: segmented picker switches between Pending / Terminal / History
+struct DashboardView: View {
     @Environment(ApprovalStore.self) private var store
     @Environment(RelayService.self) private var relay
 
+    @State private var tab: DashboardTab = .pending
+
+    enum DashboardTab: String, CaseIterable {
+        case pending = "待审批"
+        case terminal = "终端"
+        case history = "历史"
+    }
+
     var body: some View {
         NavigationStack {
-            Group {
-                if store.pendingRequests.isEmpty {
-                    emptyState
-                } else {
-                    requestList
+            VStack(spacing: 0) {
+                // Segmented picker
+                Picker("", selection: $tab) {
+                    ForEach(DashboardTab.allCases, id: \.self) { t in
+                        Text(String(localized: String.LocalizationValue(t.rawValue))).tag(t)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal)
+                .padding(.top, 8)
+
+                // Content
+                switch tab {
+                case .pending:
+                    pendingContent
+                case .terminal:
+                    terminalContent
+                case .history:
+                    historyContent
                 }
             }
-            .navigationTitle(String(localized: "审批"))
+            .navigationTitle(String(localized: "Sentinel"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     connectionIndicator
@@ -26,7 +49,7 @@ struct ApprovalListView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.top, 8)
+                        .padding(.top, 52)
                         .transition(.move(edge: .top).combined(with: .opacity))
                         .animation(.spring(duration: 0.3), value: store.syncToast)
                 }
@@ -34,47 +57,112 @@ struct ApprovalListView: View {
         }
     }
 
-    // MARK: - Request List
+    // MARK: - Pending Approvals
 
-    private var requestList: some View {
-        List {
-            ForEach(store.pendingRequests) { request in
-                NavigationLink(value: request.id) {
-                    ApprovalRow(request: request)
+    private var pendingContent: some View {
+        Group {
+            if store.pendingRequests.isEmpty {
+                ContentUnavailableView {
+                    Label(String(localized: "没有待审批的请求"), systemImage: "checkmark.shield")
+                } description: {
+                    Text(String(localized: "当 Claude Code 需要执行工具时，审批请求会出现在这里"))
                 }
-                .swipeActions(edge: .trailing) {
-                    Button(String(localized: "允许")) {
-                        store.sendDecision(requestId: request.id, decision: .allowed)
+            } else {
+                List {
+                    ForEach(store.pendingRequests) { request in
+                        NavigationLink(value: request.id) {
+                            ApprovalRow(request: request)
+                        }
+                        .swipeActions(edge: .trailing) {
+                            Button(String(localized: "允许")) {
+                                store.sendDecision(requestId: request.id, decision: .allowed)
+                            }
+                            .tint(.green)
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button(String(localized: "拒绝")) {
+                                store.sendDecision(requestId: request.id, decision: .blocked)
+                            }
+                            .tint(.red)
+                        }
                     }
-                    .tint(.green)
                 }
-                .swipeActions(edge: .leading) {
-                    Button(String(localized: "拒绝")) {
-                        store.sendDecision(requestId: request.id, decision: .blocked)
+                .listStyle(.insetGrouped)
+                .navigationDestination(for: String.self) { requestId in
+                    if let request = store.request(for: requestId) {
+                        ApprovalDetailView(request: request)
                     }
-                    .tint(.red)
                 }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .navigationDestination(for: String.self) { requestId in
-            if let request = store.request(for: requestId) {
-                ApprovalDetailView(request: request)
             }
         }
     }
 
-    // MARK: - Empty State
+    // MARK: - Terminal
 
-    private var emptyState: some View {
-        ContentUnavailableView {
-            Label(String(localized: "没有待审批的请求"), systemImage: "checkmark.shield")
-        } description: {
-            Text(String(localized: "当 Claude Code 需要执行工具时，审批请求会出现在这里"))
+    private var terminalContent: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 1) {
+                        ForEach(store.terminalLines) { line in
+                            TerminalLineView(line: line).id(line.id)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                }
+                .background(.black)
+                .onChange(of: store.terminalLines.count) { _, _ in
+                    if let last = store.terminalLines.last {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                }
+            }
+
+            if store.terminalLines.isEmpty {
+                Spacer()
+                Text(String(localized: "等待 Claude Code 输出..."))
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.green.opacity(0.4))
+                Spacer()
+            }
         }
+        .background(.black)
     }
 
-    // MARK: - Connection Indicator
+    // MARK: - History (Activity Feed)
+
+    private var historyContent: some View {
+        Group {
+            if store.activityFeed.isEmpty {
+                ContentUnavailableView {
+                    Label(String(localized: "暂无活动"), systemImage: "clock")
+                } description: {
+                    Text(String(localized: "Claude Code 的操作记录会显示在这里"))
+                }
+            } else {
+                List(store.activityFeed) { item in
+                    NavigationLink(value: "activity-\(item.id)") {
+                        ActivityRow(item: item)
+                    }
+                }
+                .listStyle(.plain)
+                .navigationDestination(for: String.self) { id in
+                    if id.hasPrefix("activity-") {
+                        let actId = String(id.dropFirst(9))
+                        if let item = store.activityFeed.first(where: { $0.id == actId }) {
+                            ActivityDetailView(item: item)
+                        }
+                    }
+                }
+            }
+        }
+        .onAppear { store.clearNewActivityCount() }
+    }
+
+    // MARK: - Connection
 
     private var connectionIndicator: some View {
         HStack(spacing: 4) {
@@ -88,7 +176,7 @@ struct ApprovalListView: View {
     }
 }
 
-// MARK: - Approval Row
+// MARK: - Approval Row (unchanged)
 
 struct ApprovalRow: View {
     let request: ApprovalRequest
@@ -121,8 +209,6 @@ struct ApprovalRow: View {
         .padding(.vertical, 4)
     }
 }
-
-// MARK: - Countdown Text (compact, for list rows)
 
 struct CountdownText: View {
     let timeoutAt: Date

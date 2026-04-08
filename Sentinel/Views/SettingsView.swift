@@ -104,6 +104,15 @@ struct SettingsView: View {
                     }
                 }
 
+                // Rules
+                Section {
+                    NavigationLink {
+                        RulesView()
+                    } label: {
+                        Label(String(localized: "规则管理"), systemImage: "slider.horizontal.3")
+                    }
+                }
+
                 // Stats
                 Section(String(localized: "统计")) {
                     LabeledContent(String(localized: "待处理")) {
