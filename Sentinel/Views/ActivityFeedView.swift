@@ -171,7 +171,7 @@ struct ActivityRow: View {
         case .stop: return item.isError ? .red : .green
         case .taskCompleted: return .green
         case .sessionEnded: return .gray
-        case .userMessage: return .tint
+        case .userMessage: return .blue
         }
     }
 }
