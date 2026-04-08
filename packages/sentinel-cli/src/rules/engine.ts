@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, writeFileSync } from 'fs';
+import { readFileSync, existsSync, writeFileSync, watch } from 'fs';
 import { join } from 'path';
 import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
@@ -95,20 +95,47 @@ const DEFAULT_RULES: Rule[] = [
 
 const RULES_PATH = join(getSentinelDir(), 'rules.json');
 
+let cachedRules: Rule[] | null = null;
+
 function loadRules(): Rule[] {
+  if (cachedRules) return cachedRules;
+
   if (!existsSync(RULES_PATH)) {
     writeFileSync(RULES_PATH, JSON.stringify(DEFAULT_RULES, null, 2));
+    cachedRules = DEFAULT_RULES;
     return DEFAULT_RULES;
   }
   try {
-    return JSON.parse(readFileSync(RULES_PATH, 'utf-8')) as Rule[];
+    cachedRules = JSON.parse(readFileSync(RULES_PATH, 'utf-8')) as Rule[];
+    return cachedRules;
   } catch {
+    cachedRules = DEFAULT_RULES;
     return DEFAULT_RULES;
   }
 }
 
 export function getRules(): Rule[] {
   return loadRules();
+}
+
+/** Watch rules.json for changes and auto-reload */
+export function watchRules(): void {
+  // Ensure file exists first
+  loadRules();
+  try {
+    let debounce: NodeJS.Timeout | null = null;
+    watch(RULES_PATH, () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        cachedRules = null; // invalidate cache
+        const rules = loadRules();
+        log.info(`Rules reloaded (${rules.length} rules)`);
+      }, 300);
+    });
+    log.debug(`Watching ${RULES_PATH} for changes`);
+  } catch {
+    log.debug('Could not watch rules file');
+  }
 }
 
 // ==================== Glob Matching ====================

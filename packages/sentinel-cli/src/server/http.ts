@@ -1,8 +1,10 @@
 import express from 'express';
 import { z } from 'zod';
+import { randomBytes } from 'crypto';
 import { matchRules, riskToLevel } from '../rules/engine';
 import { getTransport } from '../transport/interface';
 import { pending } from '../relay/pending';
+import { appendLog } from '../lib/history';
 import { log } from '../lib/logger';
 
 const HookPayloadSchema = z.object({
@@ -23,6 +25,7 @@ export function createHttpServer(port: number = 7749): express.Application {
 
     const { tool_name, tool_input } = parsed.data;
     const filePath = (tool_input.file_path ?? tool_input.path ?? null) as string | null;
+    const requestId = randomBytes(8).toString('hex');
 
     log.info(`Hook: ${tool_name}${filePath ? ` → ${filePath}` : ''}`);
 
@@ -30,38 +33,43 @@ export function createHttpServer(port: number = 7749): express.Application {
     const match = matchRules(tool_name, filePath);
     if (match.action === 'auto_allow') {
       log.success(`Auto-allow: ${tool_name} (rule: ${match.rule?.id ?? 'default'})`);
+      appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'auto_allow', decision: 'auto_allow', timestamp: new Date().toISOString() });
       return res.json({ decision: 'allow' });
     }
 
-    // 2. Check transport
+    // 2. Check transport — offline = immediate block
     const transport = getTransport();
     if (!transport || !transport.isConnected) {
       log.error(`${transport?.mode ?? 'no'} transport not connected — blocking`);
+      appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: 'offline', timestamp: new Date().toISOString() });
       return res.json({ decision: 'block', reason: 'Sentinel offline' });
     }
 
     try {
-      // 3. Send via current transport (local or remote)
-      const requestId = await transport.sendApprovalRequest({
+      // 3. Send via transport
+      const remoteId = await transport.sendApprovalRequest({
         toolName: tool_name,
         toolInput: tool_input as Record<string, unknown>,
         riskLevel: riskToLevel(match.action),
       });
 
-      log.info(`[${transport.mode}] Waiting: ${requestId}`);
+      log.info(`[${transport.mode}] Waiting: ${remoteId}`);
 
-      // 4. Wait for decision
-      const action = await pending.waitForDecision(requestId, tool_name);
+      // 4. Wait for decision (120s timeout)
+      const action = await pending.waitForDecision(remoteId, tool_name);
+
+      appendLog({ id: remoteId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: action, timestamp: new Date().toISOString() });
 
       if (action === 'allowed') {
-        log.success(`Allowed: ${tool_name} (${requestId})`);
+        log.success(`Allowed: ${tool_name} (${remoteId})`);
         return res.json({ decision: 'allow' });
       } else {
-        log.warn(`Blocked: ${tool_name} (${requestId}) — ${action}`);
+        log.warn(`Blocked: ${tool_name} (${remoteId}) — ${action}`);
         return res.json({ decision: 'block', reason: action });
       }
     } catch (err) {
       log.error(`Hook error: ${(err as Error).message}`);
+      appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: 'blocked', timestamp: new Date().toISOString() });
       return res.json({ decision: 'block', reason: 'Internal error' });
     }
   });

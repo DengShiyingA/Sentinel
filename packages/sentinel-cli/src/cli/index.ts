@@ -6,12 +6,13 @@ import qrcode from 'qrcode-terminal';
 import { ensureToken, loadToken, getStoredServerURL } from '../api/client';
 import { startHttpServer } from '../server/http';
 import { installHook, uninstallHook } from '../install/setup';
-import { getRules } from '../rules/engine';
+import { getRules, watchRules } from '../rules/engine';
 import { getPublicKeyBase64 } from '../crypto/keys';
 import { pending } from '../relay/pending';
 import { setTransport, getTransport, type TransportMode } from '../transport/interface';
 import { createTransport } from '../transport/factory';
 import { LocalTransport } from '../transport/local';
+import { getHistory, getTodayStats } from '../lib/history';
 import { log } from '../lib/logger';
 
 const program = new Command();
@@ -48,11 +49,10 @@ program
     console.log(chalk.bold('\n  🛡️  Sentinel CLI\n'));
     log.info(`Mode: ${modeLabels[mode]}`);
 
-    // Create transport via factory
     if (mode === 'server') {
       const serverURL = opts.server ?? getStoredServerURL();
       if (!serverURL) {
-        log.error('Server mode requires -s URL. Run: sentinel start --mode server -s https://...');
+        log.error('Server mode requires -s URL.');
         process.exit(1);
       }
       log.info('Authenticating...');
@@ -74,6 +74,9 @@ program
         log.info(`iOS can connect to: ${info.ip}:${info.port}`);
       }
     }
+
+    // Start rules hot-reload
+    watchRules();
 
     await startHttpServer(port);
 
@@ -142,10 +145,7 @@ program
 
     } else {
       const serverURL = opts.server ?? getStoredServerURL();
-      if (!serverURL) {
-        log.error('Server mode requires -s URL.');
-        process.exit(1);
-      }
+      if (!serverURL) { log.error('Server mode requires -s URL.'); process.exit(1); }
       const tokenData = await ensureToken(serverURL);
 
       log.info('Generating pair link...');
@@ -154,30 +154,29 @@ program
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: tokenData.token }),
       });
-
       if (!res.ok) { log.error(`Failed: ${await res.text()}`); process.exit(1); }
       const json = (await res.json()) as { success: boolean; data: { link: string; expiresIn: number } };
-      if (!json.success) { log.error('Server returned success=false'); process.exit(1); }
+      if (!json.success) { log.error('Server error'); process.exit(1); }
 
       const { link, expiresIn } = json.data;
       console.log(chalk.bold('\n  📱 Scan this QR code with Sentinel iOS:\n'));
       qrcode.generate(link, { small: true }, (qr: string) => { console.log(qr); });
       console.log(`  ${chalk.dim('Link:')} ${chalk.cyan(link)}`);
-      console.log(`  ${chalk.dim('Expires in:')} ${expiresIn}s\n`);
+      console.log(`  ${chalk.dim('Expires:')} ${expiresIn}s\n`);
 
-      log.info('Waiting for iOS to confirm...');
-      const pollInterval = setInterval(async () => {
+      log.info('Waiting for iOS...');
+      const poll = setInterval(async () => {
         try {
           const sr = await fetch(`${serverURL}/v1/pair/status?token=${encodeURIComponent(tokenData.token)}`);
           const sj = (await sr.json()) as { data: { paired: boolean; pairedDevice?: { name: string } } };
           if (sj.data?.paired) {
-            clearInterval(pollInterval);
+            clearInterval(poll);
             log.success(`Paired: ${sj.data.pairedDevice?.name ?? 'unknown'}`);
             process.exit(0);
           }
-        } catch { /* ignore */ }
+        } catch { /* retry */ }
       }, 2000);
-      setTimeout(() => { clearInterval(pollInterval); log.warn('Expired.'); process.exit(1); }, expiresIn * 1000);
+      setTimeout(() => { clearInterval(poll); log.warn('Expired.'); process.exit(1); }, expiresIn * 1000);
     }
   });
 
@@ -189,6 +188,8 @@ program
   .action(async () => {
     const token = loadToken();
     console.log(chalk.bold('\n  🛡️  Sentinel Status\n'));
+
+    // Auth
     if (token) {
       log.success(`Server: ${token.serverURL}`);
       log.success(`Device: ${token.deviceId}`);
@@ -196,6 +197,8 @@ program
       log.warn('Not authenticated (server mode)');
     }
     log.info(`Public key: ${getPublicKeyBase64().slice(0, 16)}...`);
+
+    // Hook server
     try {
       const res = await fetch('http://localhost:7749/status');
       const data = (await res.json()) as Record<string, unknown>;
@@ -204,6 +207,25 @@ program
     } catch {
       log.warn('Hook server: not running');
     }
+
+    // Rules
+    const rules = getRules();
+    log.info(`Rules: ${rules.length} loaded`);
+
+    // Today stats
+    const stats = getTodayStats();
+    if (stats.total > 0) {
+      console.log('');
+      log.info(chalk.bold('Today:'));
+      console.log(`  ${chalk.green(`✓ ${stats.allowed} allowed`)}  ${chalk.red(`✗ ${stats.blocked} blocked`)}  ${chalk.yellow(`⏱ ${stats.timeout} timeout`)}  ${chalk.dim(`⚡ ${stats.autoAllow} auto`)}  ${chalk.dim(`⬚ ${stats.offline} offline`)}`);
+      if (stats.lastRequestTime) {
+        const t = new Date(stats.lastRequestTime);
+        log.dim(`  Last request: ${t.toLocaleTimeString()}`);
+      }
+    } else {
+      log.dim('No requests today');
+    }
+
     console.log('');
   });
 
@@ -224,12 +246,56 @@ program
     console.log('');
   });
 
+// ==================== sentinel logs ====================
+
 program
   .command('logs')
-  .description('查看实时日志')
-  .action(() => {
-    log.info('Logs print to stdout with `sentinel start`');
-    log.dim('Use: sentinel start 2>&1 | tee ~/.sentinel/sentinel.log');
+  .description('查看审批历史（最近 100 条）')
+  .option('-n, --count <n>', '显示条数', '20')
+  .action((opts) => {
+    const count = parseInt(opts.count, 10) || 20;
+    const history = getHistory().slice(0, count);
+
+    console.log(chalk.bold('\n  📜 Approval History\n'));
+
+    if (history.length === 0) {
+      log.dim('No history yet. Run `sentinel start` and process some requests.');
+      console.log('');
+      return;
+    }
+
+    // Header
+    console.log(
+      `  ${chalk.dim('Time'.padEnd(10))} ${chalk.dim('Tool'.padEnd(12))} ${chalk.dim('Path'.padEnd(30))} ${chalk.dim('Risk'.padEnd(10))} ${chalk.dim('Decision')}`,
+    );
+    console.log(chalk.dim('  ' + '─'.repeat(80)));
+
+    for (const entry of history) {
+      const time = new Date(entry.timestamp).toLocaleTimeString('en', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const tool = entry.toolName.padEnd(12).slice(0, 12);
+      const path = (entry.filePath ?? '—').padEnd(30).slice(0, 30);
+
+      let risk: string;
+      switch (entry.riskLevel) {
+        case 'auto_allow': risk = chalk.dim('auto'.padEnd(10)); break;
+        case 'high': risk = chalk.red('high'.padEnd(10)); break;
+        case 'medium': risk = chalk.yellow('medium'.padEnd(10)); break;
+        default: risk = chalk.dim(entry.riskLevel.padEnd(10)); break;
+      }
+
+      let decision: string;
+      switch (entry.decision) {
+        case 'allowed': case 'auto_allow': decision = chalk.green(entry.decision); break;
+        case 'blocked': decision = chalk.red('blocked'); break;
+        case 'timeout': decision = chalk.yellow('timeout'); break;
+        case 'offline': decision = chalk.gray('offline'); break;
+        default: decision = entry.decision; break;
+      }
+
+      console.log(`  ${chalk.dim(time)} ${chalk.cyan(tool)} ${path} ${risk} ${decision}`);
+    }
+
+    console.log(chalk.dim(`\n  Showing ${history.length} of ${getHistory().length} entries\n`));
   });
 
 program.parse();

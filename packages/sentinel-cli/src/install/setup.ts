@@ -6,28 +6,25 @@ import { log } from '../lib/logger';
 const CLAUDE_DIR = join(homedir(), '.claude');
 const SETTINGS_PATH = join(CLAUDE_DIR, 'settings.json');
 
-interface ClaudeSettings {
-  hooks?: {
-    PreToolUse?: Array<{
-      type: string;
-      url: string;
-    }>;
-    [key: string]: unknown;
-  };
-  [key: string]: unknown;
-}
-
 /**
- * 将 Sentinel hook 注入到 ~/.claude/settings.json
- *
- * 添加 PreToolUse HTTP hook 指向 http://localhost:7749/hook
+ * Claude Code 2026 hook format:
+ * {
+ *   "hooks": {
+ *     "PreToolUse": [{
+ *       "hooks": [{
+ *         "type": "command",
+ *         "command": "curl -s -X POST http://localhost:7749/hook -H 'Content-Type: application/json' -d @-"
+ *       }]
+ *     }]
+ *   }
+ * }
  */
 export function installHook(port: number = 7749): void {
   if (!existsSync(CLAUDE_DIR)) {
     mkdirSync(CLAUDE_DIR, { recursive: true });
   }
 
-  let settings: ClaudeSettings = {};
+  let settings: Record<string, any> = {};
 
   if (existsSync(SETTINGS_PATH)) {
     try {
@@ -37,49 +34,50 @@ export function installHook(port: number = 7749): void {
     }
   }
 
-  const hookURL = `http://localhost:${port}/hook`;
+  const curlCmd = `curl -s -X POST http://localhost:${port}/hook -H 'Content-Type: application/json' -d @-`;
 
-  // Initialize hooks structure
-  if (!settings.hooks) {
-    settings.hooks = {};
+  if (!settings.hooks) settings.hooks = {};
+
+  // Check if already installed (any format)
+  const existing = JSON.stringify(settings.hooks);
+  if (existing.includes(`localhost:${port}/hook`)) {
+    log.info('Sentinel hook already installed');
+    return;
   }
 
+  // Write correct 2026 format
   if (!Array.isArray(settings.hooks.PreToolUse)) {
     settings.hooks.PreToolUse = [];
   }
 
-  // Check if already installed
-  const existing = settings.hooks.PreToolUse.find(
-    (h) => h.type === 'http' && h.url.includes('localhost') && h.url.includes(String(port)),
-  );
-
-  if (existing) {
-    log.info('Sentinel hook already installed in Claude Code settings');
-    return;
-  }
-
   settings.hooks.PreToolUse.push({
-    type: 'http',
-    url: hookURL,
+    hooks: [{
+      type: 'command',
+      command: curlCmd,
+    }],
   });
 
   writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
-  log.success(`Hook installed: ${hookURL}`);
-  log.dim(`  Config: ${SETTINGS_PATH}`);
+  log.success('Hook installed');
+  log.dim(`  Command: ${curlCmd}`);
+  log.dim(`  Config:  ${SETTINGS_PATH}`);
 }
 
-/**
- * 从 settings.json 移除 Sentinel hook
- */
 export function uninstallHook(port: number = 7749): void {
   if (!existsSync(SETTINGS_PATH)) return;
 
   try {
-    const settings: ClaudeSettings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
+    const settings = JSON.parse(readFileSync(SETTINGS_PATH, 'utf-8'));
 
     if (Array.isArray(settings.hooks?.PreToolUse)) {
-      settings.hooks!.PreToolUse = settings.hooks!.PreToolUse.filter(
-        (h) => !(h.type === 'http' && h.url.includes(String(port))),
+      settings.hooks.PreToolUse = settings.hooks.PreToolUse.filter(
+        (entry: any) => {
+          const hooks = entry?.hooks;
+          if (!Array.isArray(hooks)) return true;
+          return !hooks.some((h: any) =>
+            h.type === 'command' && typeof h.command === 'string' && h.command.includes(`localhost:${port}`),
+          );
+        },
       );
       writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
       log.success('Sentinel hook removed');
