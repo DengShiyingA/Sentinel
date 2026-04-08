@@ -4,6 +4,7 @@ struct ApprovalDetailView: View {
     let request: ApprovalRequest
 
     @Environment(ApprovalStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
     @State private var isAuthenticating = false
     @State private var authError: String?
 
@@ -54,6 +55,7 @@ struct ApprovalDetailView: View {
                 lineWidth: 4
             ) {
                 store.sendDecision(requestId: request.id, decision: .blocked)
+                dismiss()
             }
         }
         .padding()
@@ -145,6 +147,7 @@ struct ApprovalDetailView: View {
             // Block
             Button(role: .destructive) {
                 store.sendDecision(requestId: request.id, decision: .blocked)
+                dismiss()
             } label: {
                 Label(String(localized: "拒绝"), systemImage: "xmark.circle.fill")
                     .frame(maxWidth: .infinity)
@@ -186,6 +189,7 @@ struct ApprovalDetailView: View {
                         reason: String(localized: "验证身份以允许高风险操作")
                     )
                     store.sendDecision(requestId: request.id, decision: .allowed)
+                    dismiss()
                 } catch {
                     authError = error.localizedDescription
                 }
@@ -193,6 +197,7 @@ struct ApprovalDetailView: View {
             }
         } else {
             store.sendDecision(requestId: request.id, decision: .allowed)
+            dismiss()
         }
     }
 

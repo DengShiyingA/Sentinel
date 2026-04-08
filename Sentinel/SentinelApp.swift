@@ -1,3 +1,6 @@
+// Simulator 测试：先在 Mac 运行 `sentinel start --mode local`
+// 然后在 App 设置页选择"局域网"模式，点"手动连接"输入 localhost:7750
+
 import SwiftUI
 
 @main

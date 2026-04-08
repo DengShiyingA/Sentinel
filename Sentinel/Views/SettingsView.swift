@@ -9,7 +9,10 @@ struct SettingsView: View {
 
     @State private var showUnpairAlert = false
     @State private var showPairingSheet = false
+    @State private var showManualConnect = false
     @State private var connectionMode = ConnectionMode.current
+    @State private var manualHost = "localhost"
+    @State private var manualPort = "7750"
 
     var body: some View {
         NavigationStack {
@@ -28,30 +31,37 @@ struct SettingsView: View {
                     Text(connectionMode.description)
                 }
 
-                // Connection status
+                // Connection
                 Section(String(localized: "连接")) {
+                    // Status row
                     LabeledContent(String(localized: "状态")) {
                         HStack(spacing: 6) {
                             Circle()
                                 .fill(relay.isConnected ? .green : .red)
                                 .frame(width: 8, height: 8)
-                            Text(relay.isConnected
-                                 ? String(localized: "已连接")
-                                 : String(localized: "未连接"))
-                                .foregroundStyle(.secondary)
+                            Text(statusText).foregroundStyle(.secondary)
                         }
                     }
 
+                    // Mode-specific info
                     if connectionMode == .local {
                         if let host = local.discoveredHost {
                             LabeledContent(String(localized: "Mac")) {
                                 Text(host).font(.caption.monospaced()).foregroundStyle(.secondary)
                             }
                         }
+
                         if local.isSearching {
                             LabeledContent(String(localized: "搜索中")) {
                                 ProgressView()
                             }
+                        }
+
+                        // Manual connect (for Simulator)
+                        Button {
+                            showManualConnect = true
+                        } label: {
+                            Label(String(localized: "手动连接"), systemImage: "network")
                         }
                     }
 
@@ -83,6 +93,15 @@ struct SettingsView: View {
                             Text(error).font(.caption).foregroundStyle(.red)
                         }
                     }
+
+                    // Disconnect button (only when connected)
+                    if relay.isConnected {
+                        Button(role: .destructive) {
+                            relay.disconnect()
+                        } label: {
+                            Label(String(localized: "断开连接"), systemImage: "wifi.slash")
+                        }
+                    }
                 }
 
                 // Stats
@@ -109,7 +128,11 @@ struct SettingsView: View {
                 // About
                 Section(String(localized: "关于")) {
                     LabeledContent(String(localized: "版本")) {
-                        Text("0.1.0").foregroundStyle(.secondary)
+                        Text(appVersion).foregroundStyle(.secondary)
+                    }
+                    LabeledContent("Sentinel") {
+                        Text("Claude Code Rule Engine")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -124,9 +147,38 @@ struct SettingsView: View {
             } message: {
                 Text(String(localized: "确定要解除配对吗？"))
             }
+            .alert(String(localized: "手动连接"), isPresented: $showManualConnect) {
+                TextField(String(localized: "主机地址"), text: $manualHost)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                TextField(String(localized: "端口"), text: $manualPort)
+                    .keyboardType(.numberPad)
+                Button(String(localized: "取消"), role: .cancel) {}
+                Button(String(localized: "连接")) {
+                    let port = UInt16(manualPort) ?? 7750
+                    local.connect(host: manualHost, port: port)
+                }
+            } message: {
+                Text(String(localized: "Simulator 测试请输入 localhost:7750"))
+            }
             .sheet(isPresented: $showPairingSheet) {
                 PairingView()
             }
         }
+    }
+
+    private var statusText: String {
+        let mode = connectionMode.label
+        if relay.isConnected {
+            return "\(mode) · \(String(localized: "已连接"))"
+        } else {
+            return "\(mode) · \(String(localized: "未连接"))"
+        }
+    }
+
+    private var appVersion: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(version) (\(build))"
     }
 }

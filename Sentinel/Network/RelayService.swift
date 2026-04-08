@@ -78,6 +78,14 @@ final class RelayService {
         }
     }
 
+    func disconnect() {
+        connectTask?.cancel()
+        transport?.disconnect()
+        isConnected = false
+        connectionError = nil
+        log.info("Disconnected")
+    }
+
     func sendDecision(requestId: String, decision: Decision) {
         guard let transport else { return }
         Task {
