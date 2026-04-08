@@ -144,28 +144,33 @@ struct TerminalView: View {
     }
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            TextField(
-                relay.isConnected
-                    ? String(localized: "发送消息给 Claude Code...")
-                    : String(localized: "未连接"),
-                text: $messageText
-            )
-            .textFieldStyle(.roundedBorder)
-            .disabled(!relay.isConnected)
-            .submitLabel(.send)
-            .onSubmit { sendMessage() }
+        HStack(spacing: 10) {
+            HStack {
+                TextField(
+                    relay.isConnected
+                        ? String(localized: "发送消息给 Claude Code...")
+                        : String(localized: "未连接"),
+                    text: $messageText
+                )
+                .disabled(!relay.isConnected)
+                .submitLabel(.send)
+                .onSubmit { sendMessage() }
 
-            Button { sendMessage() } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
+                if !messageText.isEmpty {
+                    Button { sendMessage() } label: {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title3)
+                            .foregroundStyle(.tint)
+                    }
+                }
             }
-            .disabled(messageText.isEmpty || !relay.isConnected)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(.ultraThinMaterial, in: Capsule())
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 
     private var emptyState: some View {
