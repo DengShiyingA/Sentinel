@@ -20,17 +20,16 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            DashboardView()
+            ApprovalListView()
                 .tabItem {
                     Label(String(localized: "审批"), systemImage: "checkmark.shield")
                 }
                 .badge(store.pendingRequests.count)
 
-            ActivityFeedView()
+            TerminalView()
                 .tabItem {
-                    Label(String(localized: "消息"), systemImage: "bubble.left.and.bubble.right")
+                    Label(String(localized: "终端"), systemImage: "terminal")
                 }
-                .badge(store.newActivityCount > 0 ? store.newActivityCount : 0)
 
             SettingsView()
                 .tabItem {
