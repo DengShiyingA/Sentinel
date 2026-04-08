@@ -25,6 +25,10 @@ final class LocalDiscoveryService {
     private var browser: NWBrowser?
     private var connection: NWConnection?
     private var buffer = Data()
+    private var lastHost: String?
+    private var lastPort: UInt16?
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectAttempts = 0
 
     // MARK: - Discovery
 
@@ -100,6 +104,7 @@ final class LocalDiscoveryService {
                     self.isConnected = false
                     self.connectionError = error.localizedDescription
                 }
+                self.scheduleReconnect()
             case .cancelled:
                 Task { @MainActor in self.isConnected = false }
             default:
@@ -113,7 +118,11 @@ final class LocalDiscoveryService {
     /// Connect directly to IP:port (for manual entry)
     func connect(host: String, port: UInt16) {
         stopDiscovery()
+        reconnectTask?.cancel()
         disconnect()
+
+        lastHost = host
+        lastPort = port
 
         let endpoint = NWEndpoint.hostPort(host: .init(host), port: .init(rawValue: port)!)
         let params = NWParameters.tcp
@@ -124,6 +133,7 @@ final class LocalDiscoveryService {
             switch state {
             case .ready:
                 log.info("TCP connected to \(host):\(port)")
+                self.reconnectAttempts = 0
                 Task { @MainActor in
                     self.isConnected = true
                     self.connectionError = nil
@@ -136,6 +146,9 @@ final class LocalDiscoveryService {
                     self.isConnected = false
                     self.connectionError = error.localizedDescription
                 }
+                self.scheduleReconnect()
+            case .cancelled:
+                Task { @MainActor in self.isConnected = false }
             default:
                 break
             }
@@ -144,7 +157,30 @@ final class LocalDiscoveryService {
         connection?.start(queue: .global(qos: .userInitiated))
     }
 
+    // MARK: - Auto Reconnect
+
+    private func scheduleReconnect() {
+        guard let host = lastHost, let port = lastPort else { return }
+        guard reconnectAttempts < 10 else {
+            log.warning("Max reconnect attempts reached")
+            return
+        }
+
+        reconnectAttempts += 1
+        let delay = min(pow(2.0, Double(reconnectAttempts - 1)), 30) // 1s, 2s, 4s, ... 30s
+
+        log.info("Reconnecting in \(delay)s (attempt \(self.reconnectAttempts))")
+
+        reconnectTask = Task {
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            self.connect(host: host, port: port)
+        }
+    }
+
     func disconnect() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         connection?.cancel()
         connection = nil
         buffer = Data()
@@ -189,6 +225,7 @@ final class LocalDiscoveryService {
 
             if isComplete || error != nil {
                 Task { @MainActor in self.isConnected = false }
+                self.scheduleReconnect()
                 return
             }
 

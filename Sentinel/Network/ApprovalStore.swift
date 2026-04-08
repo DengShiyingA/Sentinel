@@ -81,6 +81,13 @@ final class ApprovalStore {
             guard !self.pendingRequests.contains(where: { $0.id == request.id }) else { return }
             self.pendingRequests.insert(request, at: 0)
             log.info("New request: \(request.id) tool=\(request.toolName)")
+
+            // Push notification so user sees it even when app is in background
+            NotificationService.shared.postApprovalNotification(
+                requestId: request.id,
+                toolName: request.toolName,
+                riskLevel: request.riskLevel
+            )
         }
         scheduleTimeout(for: request)
     }

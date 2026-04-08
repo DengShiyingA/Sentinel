@@ -4,8 +4,14 @@ struct ContentView: View {
     @Environment(PairingService.self) private var pairing
     @Environment(RelayService.self) private var relay
 
+    @State private var onboarded = UserDefaults.standard.bool(forKey: "sentinel.onboarded")
+
     var body: some View {
-        MainTabView()
+        if !onboarded {
+            OnboardingView(isComplete: $onboarded)
+        } else {
+            MainTabView()
+        }
     }
 }
 

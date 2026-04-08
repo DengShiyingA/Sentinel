@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct ApprovalDetailView: View {
     let request: ApprovalRequest
@@ -146,6 +147,7 @@ struct ApprovalDetailView: View {
         HStack(spacing: 12) {
             // Block
             Button(role: .destructive) {
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                 store.sendDecision(requestId: request.id, decision: .blocked)
                 dismiss()
             } label: {
@@ -181,6 +183,7 @@ struct ApprovalDetailView: View {
     // MARK: - Allow Logic
 
     private func handleAllow() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         if request.riskLevel == .requireFaceID {
             isAuthenticating = true
             Task {
