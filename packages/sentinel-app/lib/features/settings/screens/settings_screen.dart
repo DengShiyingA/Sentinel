@@ -23,14 +23,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final conn = ref.watch(connectionProvider);
+    final s = ref.watch(connectionProvider);
     final notifier = ref.read(connectionProvider.notifier);
+    final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
       body: ListView(
         children: [
-          // Connection Mode
+          // ========== 连接模式 ==========
           Padding(
             padding: const EdgeInsets.all(16),
             child: SegmentedButton<ConnectionMode>(
@@ -41,35 +42,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   icon: Icon(_modeIcon(m)),
                 );
               }).toList(),
-              selected: {conn.mode},
-              onSelectionChanged: (s) => notifier.switchMode(s.first),
+              selected: {s.mode},
+              onSelectionChanged: (sel) => notifier.switchMode(sel.first),
             ),
           ),
 
-          // Connection Status
+          // ========== 连接状态 ==========
           ListTile(
-            leading: Icon(
-              Icons.circle,
-              size: 12,
-              color: conn.isConnected ? Colors.green : Colors.red,
-            ),
-            title: Text(conn.isConnected ? '已连接' : '未连接'),
-            subtitle: conn.host != null ? Text(conn.host!) : null,
+            leading: _statusIcon(s.status),
+            title: Text(_statusText(s.status)),
+            subtitle: s.host != null ? Text(s.host!) : null,
           ),
 
-          if (conn.error != null)
+          if (s.error != null)
             ListTile(
               leading: const Icon(Icons.error_outline, color: Colors.red),
-              title: Text(conn.error!, style: const TextStyle(color: Colors.red)),
+              title: Text(s.error!,
+                  style: const TextStyle(color: Colors.red, fontSize: 13)),
             ),
 
-          // Manual Connect (LAN mode)
-          if (conn.mode == ConnectionMode.lan) ...[
+          // ========== 手动连接（LAN 模式）==========
+          if (s.mode == ConnectionMode.lan) ...[
             const Divider(),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text('手动连接',
-                  style: Theme.of(context).textTheme.titleSmall),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('手动连接', style: theme.textTheme.titleSmall),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text('Simulator 测试请输入 localhost:7750',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.outline)),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -80,40 +83,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: TextField(
                       controller: _hostController,
                       decoration: const InputDecoration(
-                        labelText: '主机',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                        labelText: '主机', border: OutlineInputBorder(), isDense: true,
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    flex: 1,
                     child: TextField(
                       controller: _portController,
                       decoration: const InputDecoration(
-                        labelText: '端口',
-                        border: OutlineInputBorder(),
-                        isDense: true,
+                        labelText: '端口', border: OutlineInputBorder(), isDense: true,
                       ),
                       keyboardType: TextInputType.number,
                     ),
                   ),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: () {
-                      final host = _hostController.text.trim();
-                      final port = int.tryParse(_portController.text) ?? 7750;
-                      notifier.connectLan(host, port);
-                    },
-                    child: const Text('连接'),
+                    onPressed: s.status == ConnStatus.connecting
+                        ? null
+                        : () {
+                            notifier.connectLan(
+                              _hostController.text.trim(),
+                              int.tryParse(_portController.text) ?? 7750,
+                            );
+                          },
+                    child: s.status == ConnStatus.connecting
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Text('连接'),
                   ),
                 ],
               ),
             ),
           ],
 
-          if (conn.isConnected) ...[
+          // ========== 断开连接 ==========
+          if (s.isConnected) ...[
             const Divider(),
             ListTile(
               leading: const Icon(Icons.link_off, color: Colors.red),
@@ -122,25 +129,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
 
-          // Stats
+          // ========== 统计 ==========
           const Divider(),
           ListTile(
             title: const Text('待处理'),
-            trailing: Text('${notifier.pendingRequests.length}'),
+            trailing: Text('${s.pendingRequests.length}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
           ListTile(
             title: const Text('已处理'),
-            trailing: Text('${notifier.resolvedCount}'),
+            trailing: Text('${s.resolvedCount}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
           ),
 
-          // About
+          // ========== 关于 ==========
           const Divider(),
+          const ListTile(title: Text('版本'), trailing: Text('0.1.0')),
           const ListTile(
-            title: Text('版本'),
-            trailing: Text('0.1.0'),
-          ),
-          const ListTile(
-            title: Text('Sentinel'),
+            title: Text('Sentinel Remote'),
             subtitle: Text('Claude Code Approval Engine'),
           ),
         ],
@@ -149,10 +155,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   IconData _modeIcon(ConnectionMode m) {
-    switch (m) {
-      case ConnectionMode.lan: return Icons.wifi;
-      case ConnectionMode.cloudkit: return Icons.cloud;
-      case ConnectionMode.server: return Icons.dns;
+    if (m == ConnectionMode.lan) return Icons.wifi;
+    if (m == ConnectionMode.cloudkit) return Icons.cloud;
+    return Icons.dns;
+  }
+
+  Widget _statusIcon(ConnStatus s) {
+    if (s == ConnStatus.connecting) {
+      return const SizedBox(
+          width: 16, height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2));
     }
+    return Icon(Icons.circle, size: 12,
+        color: s == ConnStatus.connected ? Colors.green
+            : s == ConnStatus.error ? Colors.red
+            : Colors.grey);
+  }
+
+  String _statusText(ConnStatus s) {
+    if (s == ConnStatus.connected) return '已连接';
+    if (s == ConnStatus.connecting) return '连接中...';
+    if (s == ConnStatus.error) return '连接失败';
+    return '未连接';
   }
 }

@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../../shared/models/approval_request.dart';
+import '../../../core/auth/biometric_service.dart';
 
 /// 审批请求卡片 — 显示风险等级、工具信息、倒计时、操作按钮
+/// 高风险操作点击"允许"会自动触发 Face ID / Fingerprint 验证
 class ApprovalCard extends StatelessWidget {
   final ApprovalRequest request;
   final VoidCallback onAllow;
@@ -125,7 +128,10 @@ class ApprovalCard extends StatelessWidget {
                 // 拒绝
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: onBlock,
+                    onPressed: () {
+                      HapticFeedback.heavyImpact();
+                      onBlock();
+                    },
                     icon: const Icon(Icons.close, size: 18),
                     label: const Text('拒绝'),
                     style: OutlinedButton.styleFrom(
@@ -135,10 +141,10 @@ class ApprovalCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // 允许
+                // 允许（高风险需生物识别）
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: onAllow,
+                    onPressed: () => _handleAllow(context, isHighRisk),
                     icon: Icon(isHighRisk ? Icons.fingerprint : Icons.check, size: 18),
                     label: const Text('允许'),
                   ),
@@ -149,6 +155,25 @@ class ApprovalCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// 允许操作 — 高风险自动触发生物识别
+  Future<void> _handleAllow(BuildContext context, bool isHighRisk) async {
+    HapticFeedback.mediumImpact();
+    if (isHighRisk) {
+      final ok = await BiometricService.authenticate(
+        reason: '验证身份以允许高风险操作: ${request.toolName}',
+      );
+      if (!ok) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('生物识别验证失败'), duration: Duration(seconds: 2)),
+          );
+        }
+        return;
+      }
+    }
+    onAllow();
   }
 
   /// 工具名 → 文件路径

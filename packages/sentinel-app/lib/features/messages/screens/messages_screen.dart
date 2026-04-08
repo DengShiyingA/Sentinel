@@ -21,9 +21,8 @@ class _MessagesScreenState extends ConsumerState<MessagesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(connectionProvider);
+    final conn = ref.watch(connectionProvider);
     final notifier = ref.read(connectionProvider.notifier);
-    final conn = ref.read(connectionProvider);
 
     return Scaffold(
       appBar: AppBar(
