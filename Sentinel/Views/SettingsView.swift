@@ -165,7 +165,7 @@ struct SettingsView: View {
                 Button(String(localized: "取消"), role: .cancel) {}
                 Button(String(localized: "连接")) {
                     let port = UInt16(manualPort) ?? 7750
-                    local.connect(host: manualHost, port: port)
+                    relay.connectManual(host: manualHost, port: port)
                 }
             } message: {
                 Text(String(localized: "Simulator 测试请输入 localhost:7750"))

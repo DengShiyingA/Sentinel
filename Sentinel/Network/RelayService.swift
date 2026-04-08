@@ -84,6 +84,36 @@ final class RelayService {
         }
     }
 
+    func connectManual(host: String, port: UInt16) {
+        connectTask?.cancel()
+        transport?.disconnect()
+        transport = nil
+        isConnected = false
+        connectionError = nil
+        currentMode = .local
+        ConnectionMode.current = .local
+
+        let localTransport = LocalTransport(discovery: local)
+        localTransport.onRequest = onRequest
+        localTransport.onActivity = onActivity
+        localTransport.onDecisionSync = onDecisionSync
+        localTransport.onTerminal = onTerminal
+        transport = localTransport
+
+        local.connect(host: host, port: port)
+
+        connectTask = Task { [weak self] in
+            for _ in 0..<50 {
+                if self?.local.isConnected == true {
+                    await MainActor.run { self?.isConnected = true }
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            await MainActor.run { self?.connectionError = "连接超时" }
+        }
+    }
+
     func disconnect() {
         connectTask?.cancel()
         transport?.disconnect()
