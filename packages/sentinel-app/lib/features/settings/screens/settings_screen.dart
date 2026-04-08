@@ -1,5 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../../core/transport/connection_provider.dart';
 import '../../../core/transport/transport.dart';
 
@@ -36,11 +39,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             padding: const EdgeInsets.all(16),
             child: SegmentedButton<ConnectionMode>(
               segments: ConnectionMode.values.map((m) {
-                return ButtonSegment(
-                  value: m,
-                  label: Text(m.labelZh),
-                  icon: Icon(_modeIcon(m)),
-                );
+                return ButtonSegment(value: m, label: Text(m.labelZh),
+                    icon: Icon(_modeIcon(m)));
               }).toList(),
               selected: {s.mode},
               onSelectionChanged: (sel) => notifier.switchMode(sel.first),
@@ -54,14 +54,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             subtitle: s.host != null ? Text(s.host!) : null,
           ),
 
-          if (s.error != null)
+          // 错误 + 重试
+          if (s.status == ConnStatus.error) ...[
             ListTile(
               leading: const Icon(Icons.error_outline, color: Colors.red),
-              title: Text(s.error!,
+              title: Text(s.error ?? '连接失败',
                   style: const TextStyle(color: Colors.red, fontSize: 13)),
+              trailing: FilledButton.tonal(
+                onPressed: () => _connect(notifier),
+                child: const Text('重试'),
+              ),
             ),
+          ],
 
-          // ========== 手动连接（LAN 模式）==========
+          // ========== 手动连接 ==========
           if (s.mode == ConnectionMode.lan) ...[
             const Divider(),
             Padding(
@@ -69,49 +75,33 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               child: Text('手动连接', style: theme.textTheme.titleSmall),
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Text('Simulator 测试请输入 localhost:7750',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                      color: theme.colorScheme.outline)),
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.colorScheme.outline)),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Expanded(
-                    flex: 3,
-                    child: TextField(
-                      controller: _hostController,
-                      decoration: const InputDecoration(
-                        labelText: '主机', border: OutlineInputBorder(), isDense: true,
-                      ),
-                    ),
-                  ),
+                  Expanded(flex: 3, child: TextField(
+                    controller: _hostController,
+                    decoration: const InputDecoration(
+                        labelText: '主机', border: OutlineInputBorder(), isDense: true),
+                  )),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: _portController,
-                      decoration: const InputDecoration(
-                        labelText: '端口', border: OutlineInputBorder(), isDense: true,
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
+                  Expanded(child: TextField(
+                    controller: _portController,
+                    decoration: const InputDecoration(
+                        labelText: '端口', border: OutlineInputBorder(), isDense: true),
+                    keyboardType: TextInputType.number,
+                  )),
                   const SizedBox(width: 8),
                   FilledButton(
-                    onPressed: s.status == ConnStatus.connecting
-                        ? null
-                        : () {
-                            notifier.connectLan(
-                              _hostController.text.trim(),
-                              int.tryParse(_portController.text) ?? 7750,
-                            );
-                          },
+                    onPressed: s.status == ConnStatus.connecting ? null : () => _connect(notifier),
                     child: s.status == ConnStatus.connecting
-                        ? const SizedBox(
-                            width: 18, height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
+                        ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                         : const Text('连接'),
                   ),
                 ],
@@ -119,7 +109,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ),
           ],
 
-          // ========== 断开连接 ==========
+          // ========== 断开 ==========
           if (s.isConnected) ...[
             const Divider(),
             ListTile(
@@ -127,6 +117,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: const Text('断开连接', style: TextStyle(color: Colors.red)),
               onTap: () => notifier.disconnect(),
             ),
+          ],
+
+          // ========== 测试工具 ==========
+          if (s.isConnected) ...[
+            const Divider(),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: Text('调试工具', style: theme.textTheme.titleSmall),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Wrap(spacing: 8, runSpacing: 8, children: [
+                FilledButton.tonal(
+                  onPressed: () => _sendTestRequest('Write', 'medium'),
+                  child: const Text('测试 Write'),
+                ),
+                FilledButton.tonal(
+                  onPressed: () => _sendTestRequest('Bash', 'high'),
+                  style: FilledButton.styleFrom(
+                      backgroundColor: Colors.red.shade50,
+                      foregroundColor: Colors.red),
+                  child: const Text('测试 Bash (高风险)'),
+                ),
+                FilledButton.tonal(
+                  onPressed: () => _sendTestRequest('Read', 'low'),
+                  child: const Text('测试 Read (自动放行)'),
+                ),
+              ]),
+            ),
+            const SizedBox(height: 12),
           ],
 
           // ========== 统计 ==========
@@ -149,9 +169,69 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             title: Text('Sentinel Remote'),
             subtitle: Text('Claude Code Approval Engine'),
           ),
+          const SizedBox(height: 32),
         ],
       ),
     );
+  }
+
+  /// 连接并在成功后切换到审批 Tab
+  Future<void> _connect(SentinelNotifier notifier) async {
+    await notifier.connectLan(
+      _hostController.text.trim(),
+      int.tryParse(_portController.text) ?? 7750,
+    );
+    // 连接成功 → 切换到审批 Tab
+    if (mounted && ref.read(connectionProvider).isConnected) {
+      context.go('/approval');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('连接成功'),
+          ]),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// 发送测试审批请求到 sentinel-cli
+  Future<void> _sendTestRequest(String toolName, String riskLevel) async {
+    try {
+      final client = HttpClient();
+      final request = await client.post('localhost', 7749, '/hook');
+      request.headers.contentType = ContentType.json;
+      request.write(jsonEncode({
+        'tool_name': toolName,
+        'tool_input': {
+          'file_path': '/src/test-${DateTime.now().second}.ts',
+          'command': toolName == 'Bash' ? 'rm -rf /tmp/test' : null,
+        },
+      }));
+      final response = await request.close();
+      final body = await response.transform(utf8.decoder).join();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('测试 $toolName: $body'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      client.close();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('发送失败: $e'),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
   }
 
   IconData _modeIcon(ConnectionMode m) {
@@ -162,14 +242,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Widget _statusIcon(ConnStatus s) {
     if (s == ConnStatus.connecting) {
-      return const SizedBox(
-          width: 16, height: 16,
+      return const SizedBox(width: 16, height: 16,
           child: CircularProgressIndicator(strokeWidth: 2));
     }
     return Icon(Icons.circle, size: 12,
         color: s == ConnStatus.connected ? Colors.green
-            : s == ConnStatus.error ? Colors.red
-            : Colors.grey);
+            : s == ConnStatus.error ? Colors.red : Colors.grey);
   }
 
   String _statusText(ConnStatus s) {
