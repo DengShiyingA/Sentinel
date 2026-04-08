@@ -8,12 +8,11 @@ struct TerminalView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if store.terminalLines.isEmpty && store.activityFeed.isEmpty {
+                if feedItems.isEmpty {
                     emptyState
                 } else {
                     feedList
                 }
-
                 Divider()
                 inputBar
             }
@@ -32,7 +31,7 @@ struct TerminalView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !store.terminalLines.isEmpty {
+                    if !feedItems.isEmpty {
                         Button {
                             store.terminalLines.removeAll()
                         } label: {
@@ -45,25 +44,51 @@ struct TerminalView: View {
         }
     }
 
+    private var feedItems: [FeedItem] {
+        var items: [FeedItem] = []
+
+        for line in store.terminalLines {
+            items.append(FeedItem(
+                id: line.id, time: line.timestamp, kind: .terminal(line.text)))
+        }
+
+        for item in store.activityFeed {
+            switch item.type {
+            case .userMessage:
+                items.append(FeedItem(
+                    id: "u-\(item.id)", time: item.timestamp, kind: .user(item.summary)))
+            case .claudeResponse:
+                items.append(FeedItem(
+                    id: "c-\(item.id)", time: item.timestamp, kind: .claude(item.summary)))
+            case .notification:
+                items.append(FeedItem(
+                    id: "n-\(item.id)", time: item.timestamp, kind: .terminal("📢 \(item.summary)")))
+            case .stop:
+                let prefix = item.isError ? "❌" : "✅"
+                items.append(FeedItem(
+                    id: "s-\(item.id)", time: item.timestamp, kind: .terminal("\(prefix) \(item.summary)")))
+            default:
+                break
+            }
+        }
+
+        items.sort { $0.time < $1.time }
+        return items
+    }
+
     private var feedList: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2) {
-                    ForEach(store.terminalLines) { line in
-                        terminalLine(line)
-                            .id(line.id)
-                    }
-
-                    ForEach(store.activityFeed.reversed()) { item in
-                        activityBubble(item)
-                            .id("a-\(item.id)")
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(feedItems) { item in
+                        feedRow(item).id(item.id)
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
-            .onChange(of: store.terminalLines.count) { _, _ in
-                if let last = store.terminalLines.last {
+            .onChange(of: feedItems.count) { _, _ in
+                if let last = feedItems.last {
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
@@ -72,48 +97,49 @@ struct TerminalView: View {
         }
     }
 
-    private func terminalLine(_ line: TerminalLine) -> some View {
-        HStack(alignment: .top, spacing: 6) {
-            Text(line.timestamp, format: .dateTime.hour().minute().second())
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 55, alignment: .leading)
-
-            Text(line.text)
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(lineColor(line.text))
-                .textSelection(.enabled)
-        }
-    }
-
     @ViewBuilder
-    private func activityBubble(_ item: ActivityItem) -> some View {
-        if item.type == .userMessage {
+    private func feedRow(_ item: FeedItem) -> some View {
+        switch item.kind {
+        case .terminal(let text):
+            HStack(alignment: .top, spacing: 6) {
+                Text(item.time, format: .dateTime.hour().minute().second())
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 55, alignment: .leading)
+                Text(text)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(lineColor(text))
+                    .textSelection(.enabled)
+            }
+
+        case .user(let text):
             HStack {
                 Spacer()
-                Text(item.summary)
+                Text(text)
+                    .font(.subheadline)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(.blue, in: RoundedRectangle(cornerRadius: 16))
                     .foregroundStyle(.white)
             }
-            .padding(.vertical, 4)
-        } else if item.type == .claudeResponse {
+            .padding(.vertical, 2)
+
+        case .claude(let text):
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Claude")
                         .font(.caption2.weight(.medium))
                         .foregroundStyle(.purple)
-                    Text(item.summary)
+                    Text(text)
                         .font(.subheadline)
                         .textSelection(.enabled)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 16))
+                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: 16))
                 Spacer()
             }
-            .padding(.vertical, 4)
+            .padding(.vertical, 2)
         }
     }
 
@@ -130,9 +156,7 @@ struct TerminalView: View {
             .submitLabel(.send)
             .onSubmit { sendMessage() }
 
-            Button {
-                sendMessage()
-            } label: {
+            Button { sendMessage() } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.title2)
                     .foregroundStyle(.tint)
@@ -166,5 +190,17 @@ struct TerminalView: View {
         if text.hasPrefix(">") { return .blue }
         if text.hasPrefix("[") { return .teal }
         return .primary
+    }
+}
+
+private struct FeedItem: Identifiable {
+    let id: String
+    let time: Date
+    let kind: Kind
+
+    enum Kind {
+        case terminal(String)
+        case user(String)
+        case claude(String)
     }
 }
