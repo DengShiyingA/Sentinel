@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 设备 ====================
+
+model Device {
+  id           String   @id @default(cuid())
+  publicKey    String   @unique           // Ed25519 公钥 base64
+  type         String                     // 'mac' | 'ios'
+  name         String
+  pairedWithId String?                    // 配对的对端设备 ID
+  apnsToken    String?                    // iOS 推送 token
+  createdAt    DateTime @default(now())
+
+  pairedWith   Device?  @relation("DevicePair", fields: [pairedWithId], references: [id])
+  pairedBy     Device?  @relation("DevicePair")
+
+  approvals    ApprovalRequest[]
+  rules        Rule[]
+
+  @@index([type])
+}
+
+// ==================== 审批请求 ====================
+
+model ApprovalRequest {
+  id          String    @id @default(cuid())
+  macDeviceId String
+  toolName    String
+  toolInput   Json
+  riskLevel   String    @default("low")       // 'low' | 'medium' | 'high'
+  status      String    @default("pending")   // 'pending' | 'allowed' | 'blocked' | 'timeout'
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  macDevice   Device    @relation(fields: [macDeviceId], references: [id], onDelete: Cascade)
+
+  @@index([macDeviceId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ==================== 规则 ====================
+
+model Rule {
+  id          String   @id @default(cuid())
+  deviceId    String
+  toolPattern String?                       // glob, e.g. 'Bash', 'Edit*'
+  pathPattern String?                       // glob, e.g. '/tmp/**'
+  risk        String   @default("require_confirm") // 'auto_allow' | 'require_confirm' | 'require_faceid'
+  priority    Int      @default(100)        // 越小越优先
+  description String?
+  createdAt   DateTime @default(now())
+
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId])
+  @@index([priority])
+}
