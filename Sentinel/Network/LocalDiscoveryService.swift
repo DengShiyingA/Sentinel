@@ -192,22 +192,12 @@ final class LocalDiscoveryService {
 
     // MARK: - Send (same JSON format as remote mode)
 
-    /// Send event to Mac (encrypted if key available)
     func emit(_ event: String, dict: [String: Any]) {
         guard let connection, isConnected else { return }
         let msg: [String: Any] = ["event": event, "data": dict]
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: msg),
-              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
-
-        var lineData: Data
-        if TransportEncryption.isEnabled, let encrypted = TransportEncryption.encrypt(jsonString) {
-            lineData = Data(encrypted.utf8)
-        } else {
-            lineData = jsonData
-        }
-        lineData.append(0x0A)
-
-        connection.send(content: lineData, completion: .contentProcessed({ error in
+        guard var jsonData = try? JSONSerialization.data(withJSONObject: msg) else { return }
+        jsonData.append(0x0A)
+        connection.send(content: jsonData, completion: .contentProcessed({ error in
             if let error { log.error("Send failed: \(error)") }
         }))
     }
