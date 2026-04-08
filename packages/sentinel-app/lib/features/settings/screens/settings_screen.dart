@@ -1,10 +1,9 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/transport/connection_provider.dart';
 import '../../../core/transport/transport.dart';
+import '../../../shared/models/approval_request.dart';
 import '../../../core/trust/temporary_trust.dart';
 import '../../../shared/utils/snackbar.dart';
 import '../../../shared/utils/platform.dart' as platform;
@@ -243,26 +242,29 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   /// 发送测试审批请求到 sentinel-cli
-  Future<void> _sendTestRequest(String toolName, String riskLevel) async {
-    try {
-      final client = HttpClient();
-      final request = await client.post('localhost', 7749, '/hook');
-      request.headers.contentType = ContentType.json;
-      request.write(jsonEncode({
-        'tool_name': toolName,
-        'tool_input': {
-          'file_path': '/src/test-${DateTime.now().second}.ts',
-          'command': toolName == 'Bash' ? 'rm -rf /tmp/test' : null,
-        },
-      }));
-      final response = await request.close();
-      final body = await response.transform(utf8.decoder).join();
+  void _sendTestRequest(String toolName, String riskLevel) {
+    final notifier = ref.read(connectionProvider.notifier);
+    final s = ref.read(connectionProvider);
 
-      if (mounted) showInfo(context, '测试 $toolName: $body');
-      client.close();
-    } catch (e) {
-      if (mounted) showError(context, '发送失败: $e');
+    if (!s.isConnected) {
+      showError(context, 'sentinel-cli 未连接');
+      return;
     }
+
+    final fakeRequest = ApprovalRequest(
+      id: 'test-${DateTime.now().millisecondsSinceEpoch}',
+      toolName: toolName,
+      toolInput: {
+        'file_path': '/src/test-${DateTime.now().second}.ts',
+        if (toolName == 'Bash') 'command': 'rm -rf /tmp/test',
+      },
+      riskLevel: riskLevel == 'high' ? RiskLevel.requireFaceID : RiskLevel.requireConfirm,
+      timestamp: DateTime.now(),
+      timeoutAt: DateTime.now().add(const Duration(seconds: 120)),
+    );
+
+    notifier.injectTestRequest(fakeRequest);
+    showInfo(context, '已注入测试 $toolName');
   }
 
   IconData _modeIcon(ConnectionMode m) {

@@ -143,7 +143,13 @@ class LanTransport extends Transport {
         final title = data['title'] as String? ?? 'Sentinel';
         final message = data['message'] as String? ?? '';
         debugPrint('[LAN] Notification: $title — $message');
-        // TODO: trigger local notification
+        onActivity?.call(ActivityItem(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          type: ActivityType.notification,
+          summary: message,
+          timestamp: DateTime.now(),
+          message: '$title: $message',
+        ));
         break;
 
       case 'decision_sync':

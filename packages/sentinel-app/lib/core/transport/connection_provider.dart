@@ -155,6 +155,10 @@ class SentinelNotifier extends Notifier<SentinelState> {
 
   // ==================== 审批操作 ====================
 
+  void injectTestRequest(ApprovalRequest request) {
+    state = state.copyWith(pendingRequests: [request, ...state.pendingRequests]);
+  }
+
   /// 发送审批决策
   void sendDecision(String requestId, Decision decision) {
     _transport?.sendDecision(requestId, decision);
