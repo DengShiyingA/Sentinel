@@ -6,6 +6,7 @@ import '../../../shared/models/approval_request.dart';
 import '../../../shared/models/activity_item.dart';
 import '../../../core/trust/temporary_trust.dart';
 import '../widgets/approval_card.dart';
+import 'package:go_router/go_router.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -195,6 +196,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                           request: req,
                           onAllow: () => _handleDecision(req.id, Decision.allowed),
                           onBlock: () => _handleDecision(req.id, Decision.blocked),
+                          onTap: () => context.go('/approval/detail/${req.id}'),
                           onTrust: (tool, prefix, dur) {
                             ref.read(trustProvider.notifier).addRule(
                               toolName: tool,

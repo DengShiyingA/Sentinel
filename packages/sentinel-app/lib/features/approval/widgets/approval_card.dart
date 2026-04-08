@@ -11,10 +11,9 @@ class ApprovalCard extends StatelessWidget {
   final ApprovalRequest request;
   final VoidCallback onAllow;
   final VoidCallback onBlock;
-  /// 多选模式下未选中的卡片半透明
   final bool dimmed;
-  /// 临时信任回调（toolName, pathPrefix, duration）
   final void Function(String tool, String? pathPrefix, Duration dur)? onTrust;
+  final VoidCallback? onTap;
 
   const ApprovalCard({
     super.key,
@@ -23,6 +22,7 @@ class ApprovalCard extends StatelessWidget {
     required this.onBlock,
     this.dimmed = false,
     this.onTrust,
+    this.onTap,
   });
 
   @override
@@ -36,6 +36,8 @@ class ApprovalCard extends StatelessWidget {
       child: Card(
       margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       clipBehavior: Clip.antiAlias,
+      child: InkWell(
+      onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -178,7 +180,7 @@ class ApprovalCard extends StatelessWidget {
             ),
         ],
       ),
-    ));
+    ))));
   }
 
   /// 允许操作 — 高风险自动触发生物识别
