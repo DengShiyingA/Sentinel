@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../../shared/models/approval_request.dart';
 import '../../../core/auth/biometric_service.dart';
 import '../../../shared/widgets/diff_viewer.dart';
+import '../../../shared/utils/snackbar.dart';
 
 /// 审批请求卡片 — 风险等级、意图摘要、Diff 预览、倒计时、操作按钮
 /// 高风险操作点击"允许"自动触发 Face ID / Fingerprint 验证
@@ -191,11 +192,7 @@ class ApprovalCard extends StatelessWidget {
         reason: '验证身份以允许高风险操作: ${request.toolName}',
       );
       if (!ok) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('生物识别验证失败'), duration: Duration(seconds: 2)),
-          );
-        }
+        if (context.mounted) showError(context, '生物识别验证失败');
         return;
       }
     }
@@ -324,12 +321,7 @@ class _TrustMenu extends StatelessWidget {
           option.duration,
         );
         HapticFeedback.lightImpact();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('已信任: ${option.label}'),
-          backgroundColor: Colors.blue,
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ));
+        showInfo(context, '已信任: ${option.label}', color: Colors.blue);
       },
       itemBuilder: (context) => [
         PopupMenuItem(

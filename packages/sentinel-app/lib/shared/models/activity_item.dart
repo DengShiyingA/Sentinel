@@ -1,4 +1,3 @@
-/// Activity events from Claude Code (PostToolUse, Notification, Stop, etc.)
 enum ActivityType {
   toolCompleted('tool_completed'),
   notification('notification'),
@@ -13,12 +12,8 @@ enum ActivityType {
   final String value;
   const ActivityType(this.value);
 
-  static ActivityType fromString(String s) {
-    return ActivityType.values.firstWhere(
-      (e) => e.value == s,
-      orElse: () => ActivityType.toolCompleted,
-    );
-  }
+  static ActivityType fromString(String? s) =>
+      ActivityType.values.firstWhere((e) => e.value == s, orElse: () => toolCompleted);
 }
 
 class ActivityItem {
@@ -30,7 +25,7 @@ class ActivityItem {
   final String? stopReason;
   final String? message;
 
-  ActivityItem({
+  const ActivityItem({
     required this.id,
     required this.type,
     required this.summary,
@@ -40,26 +35,33 @@ class ActivityItem {
     this.message,
   });
 
-  factory ActivityItem.fromJson(Map<String, dynamic> json) {
-    return ActivityItem(
-      id: json['id'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      type: ActivityType.fromString(json['type'] as String? ?? ''),
-      summary: json['summary'] as String? ?? json['message'] as String? ?? '',
-      toolName: json['toolName'] as String?,
-      timestamp: DateTime.now(),
-      stopReason: json['stopReason'] as String?,
-      message: json['message'] as String?,
-    );
-  }
+  factory ActivityItem.fromJson(Map<String, dynamic> json) => ActivityItem(
+    id: json['id'] as String? ?? DateTime.now().millisecondsSinceEpoch.toString(),
+    type: ActivityType.fromString(json['type'] as String?),
+    summary: json['summary'] as String? ?? json['message'] as String? ?? '',
+    toolName: json['toolName'] as String?,
+    timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '') ?? DateTime.now(),
+    stopReason: json['stopReason'] as String?,
+    message: json['message'] as String?,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'type': type.value,
+    'summary': summary,
+    if (toolName != null) 'toolName': toolName,
+    'timestamp': timestamp.toIso8601String(),
+    if (stopReason != null) 'stopReason': stopReason,
+    if (message != null) 'message': message,
+  };
 
   bool get isError => stopReason == 'error';
 }
 
-/// Terminal output line
 class TerminalLine {
   final String id;
   final String text;
   final DateTime timestamp;
 
-  TerminalLine({required this.id, required this.text, required this.timestamp});
+  const TerminalLine({required this.id, required this.text, required this.timestamp});
 }

@@ -18,7 +18,7 @@ enum RuleAction {
   final String label;
   const RuleAction(this.value, this.label);
 
-  static RuleAction fromString(String s) =>
+  static RuleAction fromString(String? s) =>
       RuleAction.values.firstWhere((e) => e.value == s, orElse: () => requireConfirm);
 }
 
@@ -35,17 +35,13 @@ class Rule {
     required this.id,
     this.toolPattern,
     this.pathPattern,
-    required this.action,
+    this.action = RuleAction.requireConfirm,
     this.priority = 100,
-    required this.description,
+    this.description = '',
     this.isBuiltin = false,
   });
 
-  RuleType get type {
-    if (toolPattern != null && pathPattern != null) return RuleType.path;
-    if (pathPattern != null) return RuleType.path;
-    return RuleType.tool;
-  }
+  RuleType get type => pathPattern != null ? RuleType.path : RuleType.tool;
 
   Rule copyWith({
     String? toolPattern,
@@ -53,33 +49,32 @@ class Rule {
     RuleAction? action,
     int? priority,
     String? description,
-  }) =>
-      Rule(
-        id: id,
-        toolPattern: toolPattern ?? this.toolPattern,
-        pathPattern: pathPattern ?? this.pathPattern,
-        action: action ?? this.action,
-        priority: priority ?? this.priority,
-        description: description ?? this.description,
-        isBuiltin: isBuiltin,
-      );
+  }) => Rule(
+    id: id,
+    toolPattern: toolPattern ?? this.toolPattern,
+    pathPattern: pathPattern ?? this.pathPattern,
+    action: action ?? this.action,
+    priority: priority ?? this.priority,
+    description: description ?? this.description,
+    isBuiltin: isBuiltin,
+  );
 
   factory Rule.fromJson(Map<String, dynamic> json) => Rule(
-        id: json['id'] as String? ?? '',
-        toolPattern: json['toolPattern'] as String?,
-        pathPattern: json['pathPattern'] as String?,
-        action: RuleAction.fromString(json['risk'] as String? ?? json['action'] as String? ?? 'require_confirm'),
-        priority: json['priority'] as int? ?? 100,
-        description: json['description'] as String? ?? '',
-        isBuiltin: json['isBuiltin'] as bool? ?? (json['id'] as String? ?? '').startsWith('builtin'),
-      );
+    id: json['id'] as String? ?? '',
+    toolPattern: json['toolPattern'] as String?,
+    pathPattern: json['pathPattern'] as String?,
+    action: RuleAction.fromString(json['risk'] as String? ?? json['action'] as String?),
+    priority: json['priority'] as int? ?? 100,
+    description: json['description'] as String? ?? '',
+    isBuiltin: json['isBuiltin'] as bool? ?? (json['id']?.toString().startsWith('builtin') ?? false),
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'toolPattern': toolPattern,
-        'pathPattern': pathPattern,
-        'risk': action.value,
-        'priority': priority,
-        'description': description,
-      };
+    'id': id,
+    if (toolPattern != null) 'toolPattern': toolPattern,
+    if (pathPattern != null) 'pathPattern': pathPattern,
+    'risk': action.value,
+    'priority': priority,
+    'description': description,
+  };
 }
