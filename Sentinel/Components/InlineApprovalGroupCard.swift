@@ -9,6 +9,7 @@ struct InlineApprovalGroupCard: View {
     @State private var isExpanded = false
     @State private var groupDecided: Decision?
     @State private var individualDecisions: Set<String> = []
+    @State private var showHighRiskHint = false
 
     var body: some View {
         if let groupDecided {
@@ -53,6 +54,20 @@ struct InlineApprovalGroupCard: View {
         VStack(alignment: .leading, spacing: 10) {
             headerRow
             fileList
+            if showHighRiskHint {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.caption)
+                    Text(String(localized: "请逐个审查下方高风险操作"))
+                        .font(.caption)
+                }
+                .foregroundStyle(.orange)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
             if isExpanded { expandedItems }
             if hasHighRisk { highRiskWarning }
             actionButtons
@@ -174,7 +189,15 @@ struct InlineApprovalGroupCard: View {
 
             Button {
                 if hasHighRisk {
-                    withAnimation { isExpanded = true }
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                        isExpanded = true
+                        showHighRiskHint = true
+                    }
+                    Task {
+                        try? await Task.sleep(for: .seconds(3))
+                        withAnimation { showHighRiskHint = false }
+                    }
                     return
                 }
                 UINotificationFeedbackGenerator().notificationOccurred(.success)
