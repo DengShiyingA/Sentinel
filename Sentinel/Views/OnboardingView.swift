@@ -40,21 +40,15 @@ struct OnboardingView: View {
             Text(String(localized: "安装 CLI"))
                 .font(.title.bold())
 
-            Text(String(localized: "在 Mac 终端执行以下命令"))
+            Text(String(localized: "在 Mac 终端执行"))
                 .foregroundStyle(.secondary)
 
-            VStack(alignment: .leading, spacing: 8) {
-                codeBlock("git clone https://github.com/DengShiyingA/Sentinel.git")
-                codeBlock("cd Sentinel && ./install.sh")
-                codeBlock("sentinel install")
-            }
-            .padding(.horizontal, 24)
+            codeBlock("git clone https://github.com/DengShiyingA/Sentinel.git && cd Sentinel && ./install.sh && sentinel install")
+                .padding(.horizontal, 24)
 
-            Text(String(localized: "install.sh 会安装依赖并全局注册 sentinel 命令\nsentinel install 会注入 hook 到 Claude Code"))
+            Text(String(localized: "一键安装 CLI 并注入 hook 到 Claude Code"))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 40)
 
             Spacer()
             Spacer()
