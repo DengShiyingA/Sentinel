@@ -212,14 +212,13 @@ final class ApprovalStore {
         timeoutTasks.removeValue(forKey: requestId)
         relay.sendDecision(requestId: requestId, decision: decision)
         Task { @MainActor in
-            if let req = self.pendingRequests.first(where: { $0.id == requestId }) {
-                self.decisionHistory.insert(
-                    DecisionRecord(id: requestId, request: req, decision: decision, decidedAt: Date()),
-                    at: 0
-                )
-                if self.decisionHistory.count > SentinelConfig.maxHistoryItems {
-                    self.decisionHistory.removeLast(self.decisionHistory.count - SentinelConfig.maxHistoryItems)
-                }
+            guard let req = self.pendingRequests.first(where: { $0.id == requestId }) else { return }
+            self.decisionHistory.insert(
+                DecisionRecord(id: requestId, request: req, decision: decision, decidedAt: Date()),
+                at: 0
+            )
+            if self.decisionHistory.count > SentinelConfig.maxHistoryItems {
+                self.decisionHistory.removeLast(self.decisionHistory.count - SentinelConfig.maxHistoryItems)
             }
             self.removeRequest(id: requestId)
             self.resolvedCount += 1

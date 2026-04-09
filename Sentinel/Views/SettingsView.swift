@@ -216,7 +216,7 @@ struct SettingsView: View {
             .alert(String(localized: "解除配对"), isPresented: $showUnpairAlert) {
                 Button(String(localized: "取消"), role: .cancel) {}
                 Button(String(localized: "解除配对"), role: .destructive) {
-                    socket.disconnect()
+                    relay.disconnect()
                     pairing.unpair()
                 }
             } message: {
