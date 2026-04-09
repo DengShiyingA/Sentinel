@@ -195,13 +195,17 @@ struct SettingsView: View {
                     }
                 }
 
-                // Stats
                 Section(String(localized: "统计")) {
-                    LabeledContent(String(localized: "待处理")) {
-                        Text("\(store.pendingRequests.count)").monospacedDigit()
-                    }
-                    LabeledContent(String(localized: "已处理")) {
-                        Text("\(store.resolvedCount)").monospacedDigit()
+                    NavigationLink {
+                        StatisticsView()
+                    } label: {
+                        HStack {
+                            Label(String(localized: "统计仪表盘"), systemImage: "chart.bar")
+                            Spacer()
+                            Text("\(store.resolvedCount)")
+                                .font(.subheadline.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
