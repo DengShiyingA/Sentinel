@@ -72,6 +72,13 @@ export class LocalTransport implements Transport {
         // when iOS responds with its public key
         (socket as any)._ephemeralSecretKey = ephemeral.secretKey;
 
+        setTimeout(() => {
+          this.send('workspace_info', {
+            cwd: process.cwd(),
+            hostname: require('os').hostname(),
+          });
+        }, 500);
+
         socket.on('data', (chunk) => {
           this.buffer += chunk.toString();
           if (this.buffer.length > LocalTransport.MAX_BUFFER_SIZE) {

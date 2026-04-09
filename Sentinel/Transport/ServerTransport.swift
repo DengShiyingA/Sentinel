@@ -13,6 +13,7 @@ final class ServerTransport: TransportProtocol {
     var onActivity: ((ActivityItem) -> Void)?
     var onDecisionSync: ((String) -> Void)?
     var onTerminal: ((String) -> Void)?
+    var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)?
 
     init(socket: SocketClient, serverURL: String, deviceId: String) {
         self.socket = socket

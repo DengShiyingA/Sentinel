@@ -11,6 +11,7 @@ final class LocalTransport: TransportProtocol {
     var onActivity: ((ActivityItem) -> Void)? { didSet { rebindListener() } }
     var onDecisionSync: ((String) -> Void)? { didSet { rebindListener() } }
     var onTerminal: ((String) -> Void)? { didSet { rebindListener() } }
+    var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)? { didSet { rebindListener() } }
 
     init(discovery: LocalDiscoveryService) {
         self.discovery = discovery
@@ -46,6 +47,7 @@ final class LocalTransport: TransportProtocol {
         let onAct = onActivity
         let onSync = onDecisionSync
         let onTerm = onTerminal
+        let onWs = onWorkspaceInfo
 
         discovery.onEvent = { event, data in
             switch event {
@@ -122,6 +124,12 @@ final class LocalTransport: TransportProtocol {
                         message: dict["message"] as? String
                     )
                     onAct?(item)
+                }
+
+            case "workspace_info":
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let cwd = dict["cwd"] as? String {
+                    onWs?(cwd, dict["hostname"] as? String)
                 }
 
             default:

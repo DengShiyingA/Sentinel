@@ -21,6 +21,7 @@ final class RelayService {
     var onActivity: ((ActivityItem) -> Void)?
     var onDecisionSync: ((String) -> Void)?
     var onTerminal: ((String) -> Void)?
+    var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)?
 
     init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
         self.socket = socket
@@ -44,6 +45,7 @@ final class RelayService {
         oldTransport?.onActivity = nil
         oldTransport?.onDecisionSync = nil
         oldTransport?.onTerminal = nil
+        oldTransport?.onWorkspaceInfo = nil
         oldTransport?.disconnect()
         transport = nil
         isConnected = false
@@ -73,6 +75,7 @@ final class RelayService {
         newTransport.onActivity = onActivity
         newTransport.onDecisionSync = onDecisionSync
         newTransport.onTerminal = onTerminal
+        newTransport.onWorkspaceInfo = onWorkspaceInfo
         transport = newTransport
 
         // Connect async

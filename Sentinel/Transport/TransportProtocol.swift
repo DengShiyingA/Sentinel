@@ -8,6 +8,7 @@ protocol TransportProtocol: AnyObject {
     var onActivity: ((ActivityItem) -> Void)? { get set }
     var onDecisionSync: ((String) -> Void)? { get set }
     var onTerminal: ((String) -> Void)? { get set }
+    var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)? { get set }
 
     func connect() async throws
     func disconnect()

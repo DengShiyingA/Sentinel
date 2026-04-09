@@ -22,6 +22,8 @@ final class ApprovalStore {
 
     /// Toast message shown briefly when another device handles a request
     var syncToast: String?
+    var workspacePath: String?
+    var workspaceHost: String?
 
     /// History of resolved approval requests with their decisions.
     var decisionHistory: [DecisionRecord] = []
@@ -157,6 +159,12 @@ final class ApprovalStore {
         }
         relay.onTerminal = { [weak self] text in
             self?.handleTerminalLine(text)
+        }
+        relay.onWorkspaceInfo = { [weak self] cwd, hostname in
+            Task { @MainActor in
+                self?.workspacePath = cwd
+                self?.workspaceHost = hostname
+            }
         }
     }
 

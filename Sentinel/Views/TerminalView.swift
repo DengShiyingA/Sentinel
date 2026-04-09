@@ -30,12 +30,20 @@ struct TerminalView: View {
             .navigationTitle(String(localized: "终端"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Circle()
-                        .fill(relay.isConnected ? .green : .gray.opacity(0.5))
-                        .frame(width: 8, height: 8)
-                        .accessibilityLabel(relay.isConnected
-                            ? String(localized: "已连接")
-                            : String(localized: "未连接"))
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(relay.isConnected ? .green : .gray.opacity(0.5))
+                            .frame(width: 8, height: 8)
+                        if let path = store.workspacePath {
+                            Text((path as NSString).lastPathComponent)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .accessibilityLabel(relay.isConnected
+                        ? String(localized: "已连接")
+                        : String(localized: "未连接"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     HStack(spacing: 12) {
