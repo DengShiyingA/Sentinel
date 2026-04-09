@@ -41,6 +41,9 @@ struct CountdownRing: View {
                 }
             }
             .frame(width: size, height: size)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(String(localized: "倒计时"))
+            .accessibilityValue(String(localized: "\(Int(remaining)) 秒"))
             .onChange(of: remaining <= 0) { _, isZero in
                 if isZero && !hasTimedOut {
                     hasTimedOut = true
