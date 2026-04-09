@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Environment(LocalDiscoveryService.self) private var local
     @Environment(RelayService.self) private var relay
     @Environment(ApprovalStore.self) private var store
+    @Environment(TrustManager.self) private var trustManager
 
     @State private var showUnpairAlert = false
     @State private var showPairingSheet = false
@@ -89,8 +90,19 @@ struct SettingsView: View {
                     }
 
                     if let error = relay.connectionError {
-                        LabeledContent(String(localized: "错误")) {
-                            Text(error).font(.caption).foregroundStyle(.red)
+                        HStack {
+                            LabeledContent(String(localized: "错误")) {
+                                Text(error).font(.caption).foregroundStyle(.red)
+                            }
+                            Spacer()
+                            Button {
+                                relay.switchMode(connectionMode)
+                            } label: {
+                                Label(String(localized: "重试"), systemImage: "arrow.clockwise")
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
                     }
 
@@ -104,12 +116,66 @@ struct SettingsView: View {
                     }
                 }
 
+                // Notification permission warning
+                if NotificationService.shared.permissionChecked && !NotificationService.shared.isPermissionGranted {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(String(localized: "通知权限未开启"))
+                                    .font(.subheadline)
+                                Text(String(localized: "审批请求将只在 App 内显示，后台时可能错过重要操作"))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundStyle(.orange)
+                        }
+                        Button(String(localized: "前往系统设置")) {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                    }
+                }
+
                 // Rules
                 Section {
                     NavigationLink {
                         RulesView()
                     } label: {
                         Label(String(localized: "规则管理"), systemImage: "slider.horizontal.3")
+                    }
+                }
+
+                // Active trusts
+                if !trustManager.activeTrusts.isEmpty {
+                    Section {
+                        ForEach(trustManager.activeTrusts) { entry in
+                            HStack {
+                                Label(entry.toolName, systemImage: "clock.badge.checkmark")
+                                Spacer()
+                                Text(entry.remainingText)
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+                            .swipeActions {
+                                Button(role: .destructive) {
+                                    trustManager.revoke(toolName: entry.toolName)
+                                } label: {
+                                    Label(String(localized: "撤销"), systemImage: "xmark.circle")
+                                }
+                            }
+                        }
+                        Button(role: .destructive) {
+                            trustManager.revokeAll()
+                        } label: {
+                            Label(String(localized: "撤销全部信任"), systemImage: "xmark.shield")
+                        }
+                    } header: {
+                        Label(String(localized: "临时信任"), systemImage: "clock.badge.checkmark")
+                    } footer: {
+                        Text(String(localized: "信任期内的工具请求将自动允许，无需手动审批"))
                     }
                 }
 
@@ -164,8 +230,11 @@ struct SettingsView: View {
                     .keyboardType(.numberPad)
                 Button(String(localized: "取消"), role: .cancel) {}
                 Button(String(localized: "连接")) {
-                    let port = UInt16(manualPort) ?? 7750
-                    relay.connectManual(host: manualHost, port: port)
+                    guard let portNum = UInt16(manualPort), portNum > 0 else {
+                        relay.connectionError = String(localized: "端口无效，请输入 1-65535")
+                        return
+                    }
+                    relay.connectManual(host: manualHost, port: portNum)
                 }
             } message: {
                 Text(String(localized: "Simulator 测试请输入 localhost:7750"))

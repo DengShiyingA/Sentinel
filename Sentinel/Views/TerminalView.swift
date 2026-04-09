@@ -212,7 +212,20 @@ struct TerminalView: View {
         ContentUnavailableView {
             Label(String(localized: "等待输出"), systemImage: "terminal")
         } description: {
-            Text(String(localized: "Claude Code 的实时输出和对话会显示在这里"))
+            if let error = relay.connectionError {
+                Text(error)
+            } else {
+                Text(String(localized: "Claude Code 的实时输出和对话会显示在这里"))
+            }
+        } actions: {
+            if !relay.isConnected {
+                Button {
+                    relay.connectCurrentMode()
+                } label: {
+                    Label(String(localized: "重新连接"), systemImage: "arrow.clockwise")
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 
