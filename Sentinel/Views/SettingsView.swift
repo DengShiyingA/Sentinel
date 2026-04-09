@@ -245,20 +245,24 @@ struct SettingsView: View {
     }
 
     private func handleQRCode(_ code: String) {
-        guard code.hasPrefix("sentinel://") else {
+        if code.hasPrefix("sentinel://") {
+            let address = String(code.dropFirst("sentinel://".count))
+            let parts = address.split(separator: ":")
+            guard parts.count == 2, let port = UInt16(parts[1]) else {
+                relay.connectionError = String(localized: "二维码格式错误")
+                return
+            }
+            Haptic.allow()
+            connectionMode = .local
+            relay.connectManual(host: String(parts[0]), port: port)
+        } else if code.hasPrefix("sentinel-remote://") {
+            let host = String(code.dropFirst("sentinel-remote://".count))
+            Haptic.allow()
+            connectionMode = .local
+            relay.connectManual(host: host, port: 443)
+        } else {
             relay.connectionError = String(localized: "无效的二维码")
-            return
         }
-        let address = String(code.dropFirst("sentinel://".count))
-        let parts = address.split(separator: ":")
-        guard parts.count == 2,
-              let port = UInt16(parts[1]) else {
-            relay.connectionError = String(localized: "二维码格式错误")
-            return
-        }
-        Haptic.allow()
-        connectionMode = .local
-        relay.connectManual(host: String(parts[0]), port: port)
     }
 
     private var statusText: String {

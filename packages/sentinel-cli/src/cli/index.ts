@@ -51,6 +51,7 @@ program
   .option('-m, --mode <mode>', '连接模式: local | cloudkit | server', 'local')
   .option('-s, --server <url>', '服务器地址（server 模式必须）')
   .option('-d, --daemon', '后台运行')
+  .option('-r, --remote', '远程穿透（通过 Cloudflare Tunnel）')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     const mode = parseMode(opts.mode);
@@ -112,6 +113,31 @@ program
     watchRules();
     await startHttpServer(port);
     setupUserMessageHandler();
+
+    if (opts.remote) {
+      const { startTunnel, stopTunnel } = require('../lib/tunnel');
+      try {
+        log.info('Starting Cloudflare Tunnel...');
+        const tunnelUrl = await startTunnel(7750);
+        const remoteAddr = tunnelUrl.replace('https://', '').replace('http://', '');
+        log.success(`Remote: ${tunnelUrl}`);
+
+        try {
+          const qrcode = require('qrcode-terminal');
+          const qrData = `sentinel-remote://${remoteAddr}`;
+          console.log('');
+          log.info('Scan QR code for remote access:');
+          qrcode.generate(qrData, { small: true }, (code: string) => {
+            console.log(code);
+          });
+        } catch {}
+
+        process.on('SIGINT', () => { stopTunnel(); process.exit(); });
+        process.on('SIGTERM', () => { stopTunnel(); process.exit(); });
+      } catch (err) {
+        log.error(`Tunnel failed: ${(err as Error).message}`);
+      }
+    }
 
     console.log('');
     log.success('Sentinel is running. Press Ctrl+C to stop.\n');
