@@ -4,9 +4,11 @@ struct InlineApprovalCard: View {
     let request: ApprovalRequest
     let onDecision: (Decision) -> Void
 
+    @Environment(TrustManager.self) private var trustManager
     @State private var decided: Decision?
     @State private var isAuthenticating = false
     @State private var authError: String?
+    @State private var showTrustMenu = false
 
     var body: some View {
         if let decided {
@@ -15,8 +17,6 @@ struct InlineApprovalCard: View {
             pendingView
         }
     }
-
-    // MARK: - Decided (collapsed)
 
     private func decidedView(_ decision: Decision) -> some View {
         HStack(spacing: 8) {
@@ -41,11 +41,8 @@ struct InlineApprovalCard: View {
         .padding(.vertical, 6)
     }
 
-    // MARK: - Pending (interactive)
-
     private var pendingView: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header: tool info + risk + countdown
             HStack(spacing: 10) {
                 ToolIcon(toolName: request.toolName, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
@@ -67,13 +64,11 @@ struct InlineApprovalCard: View {
                 CountdownText(timeoutAt: request.timeoutAt)
             }
 
-            // Diff preview (collapsed by default)
             if let diff = request.diff, !diff.isEmpty {
                 DiffView(diff: diff)
             }
 
-            // Action buttons
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button {
                     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
                     decided = .blocked
@@ -105,6 +100,10 @@ struct InlineApprovalCard: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(isAuthenticating)
+
+                if canTrust {
+                    trustButton
+                }
             }
         }
         .padding(12)
@@ -126,7 +125,46 @@ struct InlineApprovalCard: View {
         }
     }
 
-    // MARK: - Allow Logic
+    private var canTrust: Bool {
+        request.riskLevel != .requireFaceID && !TrustManager.isHighRisk(path: extractPath)
+    }
+
+    private var trustButton: some View {
+        Menu {
+            let suggestedPattern = TrustManager.suggestPathPattern(from: extractPath)
+
+            Section(String(localized: "信任 \(request.toolName)")) {
+                ForEach(TrustManager.Duration.allCases, id: \.self) { duration in
+                    Button(duration.label) {
+                        trustAndAllow(duration: duration, pathPattern: nil)
+                    }
+                }
+            }
+
+            if let pattern = suggestedPattern {
+                Section(String(localized: "信任路径 \(pattern)")) {
+                    ForEach(TrustManager.Duration.allCases, id: \.self) { duration in
+                        Button("\(duration.label) · \(pattern)") {
+                            trustAndAllow(duration: duration, pathPattern: pattern)
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "clock.badge.checkmark")
+                .font(.subheadline)
+                .frame(width: 36, height: 36)
+        }
+        .buttonStyle(.bordered)
+        .tint(.green)
+    }
+
+    private func trustAndAllow(duration: TrustManager.Duration, pathPattern: String?) {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        trustManager.trust(toolName: request.toolName, pathPattern: pathPattern, duration: duration)
+        decided = .allowed
+        onDecision(.allowed)
+    }
 
     private func handleAllow() {
         ApprovalHelper.handleAllow(
@@ -137,8 +175,6 @@ struct InlineApprovalCard: View {
             onError: { authError = $0 }
         )
     }
-
-    // MARK: - Helpers
 
     private var extractPath: String? {
         ApprovalHelper.extractPath(from: request)

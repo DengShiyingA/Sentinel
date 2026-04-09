@@ -148,27 +148,43 @@ struct SettingsView: View {
                     }
                 }
 
-                // Active trusts
                 if !trustManager.activeTrusts.isEmpty {
                     Section {
                         ForEach(trustManager.activeTrusts) { entry in
-                            HStack {
-                                Label(entry.toolName, systemImage: "clock.badge.checkmark")
+                            HStack(spacing: 12) {
+                                Image(systemName: entry.isSessionOnly ? "infinity" : "clock.badge.checkmark")
+                                    .font(.body)
+                                    .foregroundStyle(.green)
+                                    .frame(width: 28)
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.toolName)
+                                        .font(.subheadline.weight(.medium))
+                                    if let pattern = entry.pathPattern {
+                                        Text(pattern)
+                                            .font(.caption2.monospaced())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+
                                 Spacer()
-                                Text(entry.remainingText)
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+
+                                TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                    Text(entry.remainingText)
+                                        .font(.caption.monospacedDigit())
+                                        .foregroundStyle(entry.remainingSeconds < 60 && !entry.isSessionOnly ? .orange : .secondary)
+                                }
                             }
                             .swipeActions {
                                 Button(role: .destructive) {
-                                    trustManager.revoke(toolName: entry.toolName)
+                                    withAnimation { trustManager.revoke(id: entry.id) }
                                 } label: {
                                     Label(String(localized: "撤销"), systemImage: "xmark.circle")
                                 }
                             }
                         }
                         Button(role: .destructive) {
-                            trustManager.revokeAll()
+                            withAnimation { trustManager.revokeAll() }
                         } label: {
                             Label(String(localized: "撤销全部信任"), systemImage: "xmark.shield")
                         }

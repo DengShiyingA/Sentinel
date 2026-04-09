@@ -225,7 +225,8 @@ final class ApprovalStore {
     private func handleIncomingRequest(_ request: ApprovalRequest) {
         Task { @MainActor in
             // Check temporary trust — auto-approve without user interaction
-            if let trustManager, trustManager.isTrusted(toolName: request.toolName) {
+            let requestPath = ApprovalHelper.extractPath(from: request)
+            if let trustManager, trustManager.isTrusted(toolName: request.toolName, path: requestPath) {
                 log.info("Auto-allowed (trusted): \(request.id) tool=\(request.toolName)")
                 relay.sendDecision(requestId: request.id, decision: .allowed)
                 self.resolvedCount += 1
