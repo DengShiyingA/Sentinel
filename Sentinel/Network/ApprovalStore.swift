@@ -8,7 +8,6 @@ final class ApprovalStore {
     var pendingRequests: [ApprovalRequest] = []
     var resolvedCount: Int = 0
     var activityFeed: [ActivityItem] = []
-    var newActivityCount: Int = 0
     var terminalLines: [TerminalLine] = []
 
     private let relay: RelayService
@@ -150,7 +149,6 @@ final class ApprovalStore {
         Task { @MainActor in
             self.activityFeed.insert(item, at: 0)
             if self.activityFeed.count > SentinelConfig.maxActivityItems { self.activityFeed.removeLast() }
-            self.newActivityCount += 1
             log.info("Activity: \(item.type.rawValue) — \(item.summary)")
 
             // System notification for stop events
@@ -161,10 +159,6 @@ final class ApprovalStore {
                 )
             }
         }
-    }
-
-    func clearNewActivityCount() {
-        newActivityCount = 0
     }
 
     // MARK: - Approval Requests
