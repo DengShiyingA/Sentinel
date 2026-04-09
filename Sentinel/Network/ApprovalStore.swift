@@ -58,9 +58,7 @@ final class ApprovalStore {
                     id: "u-\(item.id)", time: item.timestamp, order: baseOrder + i,
                     kind: .user(item.summary)))
             case .claudeResponse:
-                entries.append(TimelineEntry(
-                    id: "c-\(item.id)", time: item.timestamp, order: baseOrder + i,
-                    kind: .claude(item.summary)))
+                break
             case .notification:
                 entries.append(TimelineEntry(
                     id: "n-\(item.id)", time: item.timestamp, order: baseOrder + i,
