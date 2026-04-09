@@ -14,7 +14,13 @@ final class CloudKitTransport: TransportProtocol {
     var onDecisionSync: ((String) -> Void)?
     var onTerminal: ((String) -> Void)?
     private(set) var isConnected = false
+    /// Bounded cache of processed request IDs to prevent unbounded memory growth.
+    /// Stores the most recent 500 IDs using FIFO eviction.
     private var processedIds = Set<String>()
+    private var processedOrder: [String] = []
+    private static let maxProcessedIds = 500
+    /// Consecutive error count — used to back off polling frequency
+    private var consecutiveErrors = 0
 
     func connect() async throws {
         let container = CKContainer(identifier: "iCloud.com.sentinel.app")
@@ -35,10 +41,16 @@ final class CloudKitTransport: TransportProtocol {
         isConnected = true
         log.info("CloudKit connected")
 
+        // Note: CloudKit mode only supports approval requests and decisions.
+        // Activity feed and terminal output require real-time transport (Local/Server)
+        // and are not available in CloudKit polling mode.
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.pollRequests()
-                try? await Task.sleep(for: .seconds(2))
+                await self?.pollDecisionSync()
+                let errors = self?.consecutiveErrors ?? 0
+                let interval = errors > 0 ? min(Double(2 << min(errors, 5)), 60.0) : 3.0
+                try? await Task.sleep(for: .seconds(interval))
             }
         }
     }
@@ -48,6 +60,11 @@ final class CloudKitTransport: TransportProtocol {
         pollTask = nil
         isConnected = false
         database = nil
+    }
+
+    func sendRulesUpdate(rules: [[String: Any]]) async throws {
+        // CloudKit mode: rules sync not supported yet — local persistence only
+        log.info("Rules sync not supported in CloudKit mode")
     }
 
     func sendDecision(requestId: String, decision: Decision) async throws {
@@ -72,11 +89,18 @@ final class CloudKitTransport: TransportProtocol {
         do {
             let (results, _) = try await database.records(matching: query, resultsLimit: 20)
 
+            self.consecutiveErrors = 0
             for (_, result) in results {
                 guard let record = try? result.get() else { continue }
                 let recordId = record.recordID.recordName
                 guard !processedIds.contains(recordId) else { continue }
                 processedIds.insert(recordId)
+                processedOrder.append(recordId)
+                // Evict oldest entries when cache exceeds limit
+                while processedIds.count > Self.maxProcessedIds, let oldest = processedOrder.first {
+                    processedOrder.removeFirst()
+                    processedIds.remove(oldest)
+                }
 
                 guard let requestId = record["requestId"] as? String,
                       let toolName = record["toolName"] as? String,
@@ -102,13 +126,51 @@ final class CloudKitTransport: TransportProtocol {
                     riskLevel: riskLevelRaw == "high" ? .requireFaceID : .requireConfirm,
                     timestamp: Date(timeIntervalSince1970: Double(timestamp) / 1000),
                     macDeviceId: "cloudkit",
-                    timeoutAt: Date(timeIntervalSince1970: Double(timeoutAt) / 1000)
+                    timeoutAt: Date(timeIntervalSince1970: Double(timeoutAt) / 1000),
+                    diff: nil
                 )
 
                 onRequest?(request)
             }
         } catch {
-            log.debug("Poll error: \(error.localizedDescription)")
+            self.consecutiveErrors += 1
+            log.error("Poll error (\(self.consecutiveErrors)x): \(error.localizedDescription)")
+            // Only show UI error on first failure to avoid spamming
+            if self.consecutiveErrors == 1 {
+                await MainActor.run {
+                    ErrorBus.shared.post("iCloud 同步失败：\(error.localizedDescription)", source: "cloudkit", recovery: "请检查网络连接和 iCloud 登录状态")
+                }
+            }
+        }
+    }
+
+    /// Poll for decisions made by other devices (multi-device sync via CloudKit)
+    private func pollDecisionSync() async {
+        guard let database else { return }
+
+        let predicate = NSPredicate(format: "status == %@", "new")
+        let query = CKQuery(recordType: "Decision", predicate: predicate)
+
+        do {
+            let (results, _) = try await database.records(matching: query, resultsLimit: 20)
+            for (_, result) in results {
+                guard let record = try? result.get() else { continue }
+                let recordId = record.recordID.recordName
+                guard !processedIds.contains(recordId) else { continue }
+                processedIds.insert(recordId)
+                processedOrder.append(recordId)
+                while processedIds.count > Self.maxProcessedIds, let oldest = processedOrder.first {
+                    processedOrder.removeFirst()
+                    processedIds.remove(oldest)
+                }
+
+                if let requestId = record["requestId"] as? String {
+                    onDecisionSync?(requestId)
+                }
+            }
+        } catch {
+            // Decision sync errors are non-critical — just log
+            log.debug("Decision sync poll error: \(error.localizedDescription)")
         }
     }
 }
