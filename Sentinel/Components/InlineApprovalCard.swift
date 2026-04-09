@@ -74,7 +74,7 @@ struct InlineApprovalCard: View {
 
             HStack(spacing: 8) {
                 Button {
-                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                    Haptic.block()
                     decided = .blocked
                     onDecision(.blocked)
                 } label: {
@@ -112,11 +112,11 @@ struct InlineApprovalCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .fill(cardBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .strokeBorder(borderColor, lineWidth: 1)
         )
         .alert(String(localized: "认证失败"), isPresented: .init(
@@ -164,7 +164,7 @@ struct InlineApprovalCard: View {
     }
 
     private func trustAndAllow(duration: TrustManager.Duration, pathPattern: String?) {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        Haptic.allow()
         trustManager.trust(toolName: request.toolName, pathPattern: pathPattern, duration: duration)
         decided = .allowed
         onDecision(.allowed)

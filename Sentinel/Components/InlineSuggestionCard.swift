@@ -67,11 +67,11 @@ struct InlineSuggestionCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .fill(Color.blue.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .strokeBorder(Color.blue.opacity(0.3), lineWidth: 1)
         )
     }

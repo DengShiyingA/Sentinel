@@ -177,14 +177,14 @@ struct SettingsView: View {
                             }
                             .swipeActions {
                                 Button(role: .destructive) {
-                                    withAnimation { trustManager.revoke(id: entry.id) }
+                                    withAnimation(Theme.springAnimation) { trustManager.revoke(id: entry.id) }
                                 } label: {
                                     Label(String(localized: "撤销"), systemImage: "xmark.circle")
                                 }
                             }
                         }
                         Button(role: .destructive) {
-                            withAnimation { trustManager.revokeAll() }
+                            withAnimation(Theme.springAnimation) { trustManager.revokeAll() }
                         } label: {
                             Label(String(localized: "撤销全部信任"), systemImage: "xmark.shield")
                         }

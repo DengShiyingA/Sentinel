@@ -1,5 +1,4 @@
 import Foundation
-import UIKit
 
 enum ApprovalHelper {
     /// Extract display path from approval request tool input.
@@ -43,7 +42,7 @@ enum ApprovalHelper {
                         reason: String(localized: "验证身份以允许高风险操作")
                     )
                     await MainActor.run {
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        Haptic.allow()
                         onSuccess()
                         onAuthEnd()
                     }
@@ -55,7 +54,7 @@ enum ApprovalHelper {
                 }
             }
         } else {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            Haptic.allow()
             onSuccess()
         }
     }

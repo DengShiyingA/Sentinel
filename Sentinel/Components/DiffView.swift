@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct DiffView: View {
     let diff: String
@@ -64,9 +63,9 @@ struct DiffView: View {
                 diffContent
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.cardRadius))
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .strokeBorder(Color(.separator).opacity(0.3), lineWidth: 0.5)
         )
         .onAppear {
@@ -76,7 +75,7 @@ struct DiffView: View {
 
     private var headerBar: some View {
         Button {
-            withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
+            withAnimation(Theme.springAnimation) {
                 isExpanded.toggle()
                 if !isExpanded { showAll = false }
             }
@@ -132,7 +131,7 @@ struct DiffView: View {
     private var copyButton: some View {
         Button {
             UIPasteboard.general.string = diff
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Haptic.light()
             copied = true
             Task {
                 try? await Task.sleep(for: .seconds(1.5))
@@ -180,7 +179,7 @@ struct DiffView: View {
 
     private var expandButton: some View {
         Button {
-            withAnimation(.spring(duration: 0.3, bounce: 0.1)) { showAll = true }
+            withAnimation(Theme.springAnimation) { showAll = true }
         } label: {
             HStack(spacing: 6) {
                 Spacer()

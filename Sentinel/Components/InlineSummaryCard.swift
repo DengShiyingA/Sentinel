@@ -7,7 +7,7 @@ struct InlineSummaryCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
+                withAnimation(Theme.springAnimation) { isExpanded.toggle() }
             } label: {
                 HStack(spacing: 10) {
                     Image(systemName: summary.isError ? "xmark.circle.fill" : "checkmark.circle.fill")
@@ -69,11 +69,11 @@ struct InlineSummaryCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .fill(summary.isError ? Color.red.opacity(0.06) : Color.green.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .strokeBorder(
                     summary.isError ? Color.red.opacity(0.3) : Color.green.opacity(0.3),
                     lineWidth: 1

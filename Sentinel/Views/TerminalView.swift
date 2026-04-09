@@ -64,7 +64,7 @@ struct TerminalView: View {
                 }
                 .onChange(of: store.timeline.count) { _, _ in
                     if isScrolledToBottom {
-                        withAnimation(.easeOut(duration: 0.15)) {
+                        withAnimation(Theme.springAnimation) {
                             proxy.scrollTo("bottom-anchor", anchor: .bottom)
                         }
                     }
@@ -72,7 +72,7 @@ struct TerminalView: View {
 
                 if !isScrolledToBottom && pendingApprovalCount > 0 {
                     newApprovalBanner {
-                        withAnimation(.easeOut(duration: 0.15)) {
+                        withAnimation(Theme.springAnimation) {
                             proxy.scrollTo("bottom-anchor", anchor: .bottom)
                         }
                     }

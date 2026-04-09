@@ -81,15 +81,15 @@ struct InlineApprovalGroupCard: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .fill(hasHighRisk ? Color.red.opacity(0.04) : Color.orange.opacity(0.06))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: Theme.cardRadius)
                 .strokeBorder(hasHighRisk ? Color.red.opacity(0.3) : Color.orange.opacity(0.3), lineWidth: 1)
         )
-        .animation(.spring(duration: 0.3, bounce: 0.1), value: isExpanded)
-        .animation(.spring(duration: 0.3, bounce: 0.1), value: individualDecisions)
+        .animation(Theme.springAnimation, value: isExpanded)
+        .animation(Theme.springAnimation, value: individualDecisions)
     }
 
     private var headerRow: some View {
@@ -109,7 +109,7 @@ struct InlineApprovalGroupCard: View {
                     .foregroundStyle(.red)
             }
             Button {
-                withAnimation { isExpanded.toggle() }
+                withAnimation(Theme.springAnimation) { isExpanded.toggle() }
             } label: {
                 Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                     .font(.caption)
@@ -179,7 +179,7 @@ struct InlineApprovalGroupCard: View {
     private var actionButtons: some View {
         HStack(spacing: 8) {
             Button {
-                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                Haptic.block()
                 groupDecided = .blocked
                 onGroupDecision(.blocked)
             } label: {
@@ -196,18 +196,18 @@ struct InlineApprovalGroupCard: View {
 
             Button {
                 if hasHighRisk {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    withAnimation(.spring(duration: 0.35, bounce: 0.15)) {
+                    Haptic.warning()
+                    withAnimation(Theme.springAnimation) {
                         isExpanded = true
                         showHighRiskHint = true
                     }
                     Task {
                         try? await Task.sleep(for: .seconds(3))
-                        withAnimation { showHighRiskHint = false }
+                        withAnimation(Theme.springAnimation) { showHighRiskHint = false }
                     }
                     return
                 }
-                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                Haptic.allow()
                 groupDecided = .allowed
                 onGroupDecision(.allowed)
             } label: {
@@ -233,7 +233,7 @@ struct InlineApprovalGroupCard: View {
             Section(String(localized: "信任 \(group.toolName)")) {
                 ForEach(TrustManager.Duration.allCases, id: \.self) { duration in
                     Button(duration.label) {
-                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        Haptic.allow()
                         trustManager.trust(toolName: group.toolName, duration: duration)
                         groupDecided = .allowed
                         onGroupDecision(.allowed)
@@ -245,7 +245,7 @@ struct InlineApprovalGroupCard: View {
                 Section(String(localized: "信任路径 \(pattern)")) {
                     ForEach(TrustManager.Duration.allCases, id: \.self) { duration in
                         Button("\(duration.label) · \(pattern)") {
-                            UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            Haptic.allow()
                             trustManager.trust(toolName: group.toolName, pathPattern: pattern, duration: duration)
                             groupDecided = .allowed
                             onGroupDecision(.allowed)

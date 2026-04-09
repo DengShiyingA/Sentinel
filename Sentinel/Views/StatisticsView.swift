@@ -81,7 +81,7 @@ struct StatisticsView: View {
                             .font(.subheadline.monospacedDigit().weight(.medium))
 
                         GeometryReader { geo in
-                            RoundedRectangle(cornerRadius: 3)
+                            RoundedRectangle(cornerRadius: Theme.badgeRadius)
                                 .fill(toolColor(tool.toolName))
                                 .frame(width: geo.size.width * tool.ratio, height: 6)
                                 .frame(maxHeight: .infinity, alignment: .center)
@@ -177,6 +177,6 @@ private struct StatCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+        .background(color.opacity(0.08), in: RoundedRectangle(cornerRadius: Theme.cardRadius))
     }
 }
