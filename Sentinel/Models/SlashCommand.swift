@@ -33,11 +33,6 @@ struct SlashCommand: Identifiable {
 
     static let claudeCommands: [SlashCommand] = [
         SlashCommand(id: "init", label: "/init", icon: "doc.badge.plus", description: "初始化 CLAUDE.md", category: .claude),
-        SlashCommand(id: "brainstorming", label: "/brainstorming", icon: "lightbulb.max", description: "头脑风暴设计方案", category: .claude),
-        SlashCommand(id: "writing-plans", label: "/writing-plans", icon: "list.clipboard", description: "编写实现计划", category: .claude),
-        SlashCommand(id: "subagent-driven-development", label: "/subagent-driven-development", icon: "person.3", description: "子代理驱动开发", category: .claude),
-        SlashCommand(id: "executing-plans", label: "/executing-plans", icon: "play.circle", description: "执行实现计划", category: .claude),
-        SlashCommand(id: "claude-api", label: "/claude-api", icon: "cloud", description: "Claude API 帮助", category: .claude),
         SlashCommand(id: "review-pr", label: "/review-pr", icon: "eye", description: "审查 Pull Request", category: .claude),
         SlashCommand(id: "commit", label: "/commit", icon: "arrow.triangle.branch", description: "提交代码", category: .claude),
         SlashCommand(id: "add-dir", label: "/add-dir", icon: "folder.badge.plus", description: "添加工作目录", category: .claude),
