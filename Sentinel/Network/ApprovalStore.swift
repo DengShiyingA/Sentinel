@@ -198,7 +198,6 @@ final class ApprovalStore {
         Task { @MainActor in
             self.activityFeed.insert(item, at: 0)
             if self.activityFeed.count > SentinelConfig.maxActivityItems { self.activityFeed.removeLast() }
-            self.rebuildTimeline()
             log.info("Activity: \(item.type.rawValue) — \(item.summary)")
 
             // Session summary for stop events
@@ -216,6 +215,8 @@ final class ApprovalStore {
                     body: summary.displaySubtitle
                 )
             }
+
+            self.rebuildTimeline()
         }
     }
 
