@@ -9,6 +9,7 @@ struct TerminalView: View {
     @State private var pendingApprovalCount = 0
     @State private var showSlashMenu = false
     @State private var commandResult: String?
+    @State private var showSessionHistory = false
 
     var body: some View {
         NavigationStack {
@@ -37,19 +38,31 @@ struct TerminalView: View {
                             : String(localized: "未连接"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !store.timeline.isEmpty {
+                    HStack(spacing: 12) {
                         Button {
-                            store.clearTerminal()
-                            commandResult = nil
+                            showSessionHistory = true
                         } label: {
-                            Image(systemName: "trash")
+                            Image(systemName: "clock.arrow.circlepath")
                                 .font(.caption)
+                        }
+
+                        if !store.timeline.isEmpty {
+                            Button {
+                                store.clearTerminal()
+                                commandResult = nil
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption)
+                            }
                         }
                     }
                 }
             }
             .onChange(of: store.pendingRequests.count) { _, newCount in
                 pendingApprovalCount = newCount
+            }
+            .sheet(isPresented: $showSessionHistory) {
+                SessionHistoryView()
             }
             .onChange(of: messageText) { _, newValue in
                 withAnimation(Theme.springAnimation) {

@@ -214,6 +214,16 @@ final class ApprovalStore {
                     title: item.isError ? "❌ Claude Code 任务失败" : "✅ Claude Code 任务完成",
                     body: summary.displaySubtitle
                 )
+
+                SessionRecord.append(SessionRecord(
+                    id: summary.id,
+                    startedAt: self.lastStopTimestamp ?? summary.timestamp,
+                    endedAt: summary.timestamp,
+                    summary: item.summary,
+                    filesModified: summary.filesModified,
+                    approvalCount: summary.approvalsAllowed + summary.approvalsBlocked,
+                    isError: summary.isError
+                ))
             }
 
             self.rebuildTimeline()
