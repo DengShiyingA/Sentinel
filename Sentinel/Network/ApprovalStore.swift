@@ -114,6 +114,12 @@ final class ApprovalStore {
         }
 
         timeline = entries
+
+        SharedStateWriter.update(
+            isConnected: relay.isConnected,
+            pendingRequests: pendingRequests,
+            resolvedCount: resolvedCount
+        )
     }
 
     /// Group pending requests by tool name when they arrive within 3 seconds.
