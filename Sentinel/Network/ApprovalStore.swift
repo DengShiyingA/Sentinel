@@ -13,6 +13,8 @@ final class ApprovalStore {
 
     private let relay: RelayService
     private var timeoutTasks: [String: Task<Void, Never>] = [:]
+    /// Set by SentinelApp after init to enable trust-based auto-approval
+    var trustManager: TrustManager?
 
     init(relay: RelayService) {
         self.relay = relay
@@ -21,6 +23,82 @@ final class ApprovalStore {
 
     /// Toast message shown briefly when another device handles a request
     var syncToast: String?
+
+    /// History of resolved approval requests with their decisions.
+    var decisionHistory: [DecisionRecord] = []
+
+    /// Unified timeline entries for the terminal view.
+    var timeline: [TimelineEntry] {
+        var entries: [TimelineEntry] = []
+
+        for line in terminalLines {
+            entries.append(TimelineEntry(
+                id: line.id, time: line.timestamp, kind: .terminal(line.text)))
+        }
+
+        for item in activityFeed {
+            switch item.type {
+            case .userMessage:
+                entries.append(TimelineEntry(
+                    id: "u-\(item.id)", time: item.timestamp, kind: .user(item.summary)))
+            case .claudeResponse:
+                entries.append(TimelineEntry(
+                    id: "c-\(item.id)", time: item.timestamp, kind: .claude(item.summary)))
+            case .notification:
+                entries.append(TimelineEntry(
+                    id: "n-\(item.id)", time: item.timestamp,
+                    kind: .terminal("📢 \(item.summary)")))
+            case .stop:
+                let prefix = item.isError ? "❌" : "✅"
+                entries.append(TimelineEntry(
+                    id: "s-\(item.id)", time: item.timestamp,
+                    kind: .terminal("\(prefix) \(item.summary)")))
+            default:
+                break
+            }
+        }
+
+        let groups = groupedApprovals()
+        for group in groups {
+            if group.requests.count == 1 {
+                let req = group.requests[0]
+                entries.append(TimelineEntry(
+                    id: "a-\(req.id)", time: req.timestamp, kind: .approval(req)))
+            } else {
+                let earliest = group.requests.map(\.timestamp).min() ?? Date()
+                entries.append(TimelineEntry(
+                    id: "ag-\(group.id)", time: earliest, kind: .approvalGroup(group)))
+            }
+        }
+
+        entries.sort { $0.time < $1.time }
+        return entries
+    }
+
+    /// Group pending requests by tool name when they arrive within 3 seconds.
+    private func groupedApprovals() -> [ApprovalGroup] {
+        guard !pendingRequests.isEmpty else { return [] }
+        let sorted = pendingRequests.sorted { $0.timestamp < $1.timestamp }
+        var groups: [ApprovalGroup] = []
+        var current = ApprovalGroup(
+            id: sorted[0].id, toolName: sorted[0].toolName, requests: [sorted[0]])
+
+        for i in 1..<sorted.count {
+            let req = sorted[i]
+            let lastInGroup = current.requests.last!
+            let gap = req.timestamp.timeIntervalSince(lastInGroup.timestamp)
+
+            if req.toolName == current.toolName && gap <= 3.0 {
+                current.requests.append(req)
+            } else {
+                groups.append(current)
+                current = ApprovalGroup(
+                    id: req.id, toolName: req.toolName, requests: [req])
+            }
+        }
+        groups.append(current)
+        return groups
+    }
 
     private func setupRelay() {
         relay.onRequest = { [weak self] request in
@@ -42,8 +120,8 @@ final class ApprovalStore {
     private func handleTerminalLine(_ text: String) {
         Task { @MainActor in
             self.terminalLines.append(TerminalLine.from(text: text))
-            if self.terminalLines.count > 500 {
-                self.terminalLines.removeFirst(self.terminalLines.count - 500)
+            if self.terminalLines.count > SentinelConfig.maxTerminalLines {
+                self.terminalLines.removeFirst(self.terminalLines.count - SentinelConfig.maxTerminalLines)
             }
         }
     }
@@ -71,7 +149,7 @@ final class ApprovalStore {
     private func handleActivity(_ item: ActivityItem) {
         Task { @MainActor in
             self.activityFeed.insert(item, at: 0)
-            if self.activityFeed.count > 50 { self.activityFeed.removeLast() }
+            if self.activityFeed.count > SentinelConfig.maxActivityItems { self.activityFeed.removeLast() }
             self.newActivityCount += 1
             log.info("Activity: \(item.type.rawValue) — \(item.summary)")
 
@@ -92,12 +170,19 @@ final class ApprovalStore {
     // MARK: - Approval Requests
 
     private func handleIncomingRequest(_ request: ApprovalRequest) {
+        // Check temporary trust — auto-approve without user interaction
+        if let trustManager, trustManager.isTrusted(toolName: request.toolName) {
+            log.info("Auto-allowed (trusted): \(request.id) tool=\(request.toolName)")
+            relay.sendDecision(requestId: request.id, decision: .allowed)
+            Task { @MainActor in self.resolvedCount += 1 }
+            return
+        }
+
         Task { @MainActor in
             guard !self.pendingRequests.contains(where: { $0.id == request.id }) else { return }
             self.pendingRequests.insert(request, at: 0)
             log.info("New request: \(request.id) tool=\(request.toolName)")
 
-            // Push notification so user sees it even when app is in background
             NotificationService.shared.postApprovalNotification(
                 requestId: request.id,
                 toolName: request.toolName,
@@ -112,10 +197,22 @@ final class ApprovalStore {
         timeoutTasks.removeValue(forKey: requestId)
         relay.sendDecision(requestId: requestId, decision: decision)
         Task { @MainActor in
+            if let req = self.pendingRequests.first(where: { $0.id == requestId }) {
+                self.decisionHistory.insert(
+                    DecisionRecord(id: requestId, request: req, decision: decision, decidedAt: Date()),
+                    at: 0
+                )
+            }
             self.removeRequest(id: requestId)
             self.resolvedCount += 1
         }
         log.info("Decision: \(requestId) → \(decision.rawValue)")
+    }
+
+    func sendGroupDecision(group: ApprovalGroup, decision: Decision) {
+        for request in group.requests {
+            sendDecision(requestId: request.id, decision: decision)
+        }
     }
 
     // MARK: - Send Message to Mac
@@ -130,7 +227,8 @@ final class ApprovalStore {
         let requestId = request.id
         let remaining = request.remainingSeconds
         guard remaining > 0 else {
-            sendDecision(requestId: requestId, decision: .blocked)
+            // Already expired — mark as expired immediately instead of blocking
+            Task { @MainActor in self.expireRequest(id: requestId) }
             return
         }
         let task = Task {
@@ -140,10 +238,22 @@ final class ApprovalStore {
                 self.pendingRequests.contains { $0.id == requestId }
             }
             if stillPending {
-                self.sendDecision(requestId: requestId, decision: .blocked)
+                // Mark as expired and notify — don't auto-block
+                await MainActor.run { self.expireRequest(id: requestId) }
             }
         }
         timeoutTasks[requestId] = task
+    }
+
+    /// Move a request to expired state. The user can still manually block it,
+    /// but we don't auto-block to avoid unintended denials when user is away.
+    @MainActor
+    private func expireRequest(id: String) {
+        removeRequest(id: id)
+        resolvedCount += 1
+        // Notify transport that request expired (treated as timeout on CLI side)
+        relay.sendDecision(requestId: id, decision: .blocked)
+        log.info("Request expired: \(id)")
     }
 
     @MainActor
