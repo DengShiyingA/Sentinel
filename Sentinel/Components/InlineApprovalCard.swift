@@ -4,7 +4,6 @@ struct InlineApprovalCard: View {
     let request: ApprovalRequest
     let onDecision: (Decision) -> Void
 
-    @State private var isExpanded = false
     @State private var decided: Decision?
     @State private var isAuthenticating = false
     @State private var authError: String?
@@ -61,30 +60,16 @@ struct InlineApprovalCard: View {
                     }
                 }
                 Spacer()
+                if let diff = request.diff, !diff.isEmpty {
+                    DiffSummaryBadge(diff: diff)
+                }
                 RiskBadge(riskLevel: request.riskLevel)
                 CountdownText(timeoutAt: request.timeoutAt)
             }
 
             // Diff preview (collapsed by default)
             if let diff = request.diff, !diff.isEmpty {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                            .font(.caption2)
-                        Text(String(localized: "查看 Diff"))
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                }
-                .buttonStyle(.plain)
-
-                if isExpanded {
-                    DiffView(diff: diff)
-                        .frame(maxHeight: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                }
+                DiffView(diff: diff)
             }
 
             // Action buttons
