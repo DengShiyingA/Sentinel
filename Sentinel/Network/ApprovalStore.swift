@@ -183,15 +183,15 @@ final class ApprovalStore {
     // MARK: - Approval Requests
 
     private func handleIncomingRequest(_ request: ApprovalRequest) {
-        // Check temporary trust — auto-approve without user interaction
-        if let trustManager, trustManager.isTrusted(toolName: request.toolName) {
-            log.info("Auto-allowed (trusted): \(request.id) tool=\(request.toolName)")
-            relay.sendDecision(requestId: request.id, decision: .allowed)
-            Task { @MainActor in self.resolvedCount += 1 }
-            return
-        }
-
         Task { @MainActor in
+            // Check temporary trust — auto-approve without user interaction
+            if let trustManager, trustManager.isTrusted(toolName: request.toolName) {
+                log.info("Auto-allowed (trusted): \(request.id) tool=\(request.toolName)")
+                relay.sendDecision(requestId: request.id, decision: .allowed)
+                self.resolvedCount += 1
+                return
+            }
+
             guard !self.pendingRequests.contains(where: { $0.id == request.id }) else { return }
             self.pendingRequests.insert(request, at: 0)
             self.rebuildTimeline()
@@ -202,8 +202,9 @@ final class ApprovalStore {
                 toolName: request.toolName,
                 riskLevel: request.riskLevel
             )
+
+            self.scheduleTimeout(for: request)
         }
-        scheduleTimeout(for: request)
     }
 
     func sendDecision(requestId: String, decision: Decision) {

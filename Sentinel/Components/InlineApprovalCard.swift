@@ -144,34 +144,19 @@ struct InlineApprovalCard: View {
     // MARK: - Allow Logic
 
     private func handleAllow() {
-        if request.riskLevel == .requireFaceID {
-            isAuthenticating = true
-            Task {
-                do {
-                    try await BiometricService.authenticate(
-                        reason: String(localized: "验证身份以允许高风险操作")
-                    )
-                    UINotificationFeedbackGenerator().notificationOccurred(.success)
-                    decided = .allowed
-                    onDecision(.allowed)
-                } catch {
-                    authError = error.localizedDescription
-                }
-                isAuthenticating = false
-            }
-        } else {
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            decided = .allowed
-            onDecision(.allowed)
-        }
+        ApprovalHelper.handleAllow(
+            request: request,
+            onSuccess: { decided = .allowed; onDecision(.allowed) },
+            onAuthStart: { isAuthenticating = true },
+            onAuthEnd: { isAuthenticating = false },
+            onError: { authError = $0 }
+        )
     }
 
     // MARK: - Helpers
 
     private var extractPath: String? {
-        request.toolInput["file_path"]?.description
-            ?? request.toolInput["path"]?.description
-            ?? request.toolInput["command"]?.description
+        ApprovalHelper.extractPath(from: request)
     }
 
     private var cardBackground: Color {

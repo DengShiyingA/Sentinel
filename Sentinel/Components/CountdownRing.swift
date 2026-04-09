@@ -10,7 +10,7 @@ struct CountdownRing: View {
     @State private var hasTimedOut = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 0.1)) { context in
+        TimelineView(.periodic(from: .now, by: 1)) { context in
             let remaining = max(0, timeoutAt.timeIntervalSince(context.date))
             let progress = remaining / totalDuration
 
@@ -27,7 +27,7 @@ struct CountdownRing: View {
                         style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.1), value: progress)
+                    .animation(.linear(duration: 1), value: progress)
 
                 // Time text
                 VStack(spacing: 2) {

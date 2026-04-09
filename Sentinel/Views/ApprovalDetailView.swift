@@ -5,9 +5,11 @@ struct ApprovalDetailView: View {
     let request: ApprovalRequest
 
     @Environment(ApprovalStore.self) private var store
+    @Environment(TrustManager.self) private var trustManager
     @Environment(\.dismiss) private var dismiss
     @State private var isAuthenticating = false
     @State private var authError: String?
+    @State private var showTrustOptions = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,6 +17,9 @@ struct ApprovalDetailView: View {
                 VStack(spacing: 16) {
                     riskBanner
                     detailSection
+                    if let diff = request.diff, !diff.isEmpty {
+                        DiffView(diff: diff)
+                    }
                     toolInputSection
                 }
                 .padding()
@@ -51,7 +56,7 @@ struct ApprovalDetailView: View {
             Spacer()
             CountdownRing(
                 timeoutAt: request.timeoutAt,
-                totalDuration: 120,
+                totalDuration: SentinelConfig.approvalTimeoutSeconds,
                 size: 56,
                 lineWidth: 4
             ) {
@@ -129,52 +134,86 @@ struct ApprovalDetailView: View {
     }
 
     private var formattedInput: String {
-        guard let data = try? JSONEncoder.sentinelEncoder.encode(request.toolInput),
-              let obj = try? JSONSerialization.jsonObject(with: data),
-              let pretty = try? JSONSerialization.data(
-                  withJSONObject: obj,
-                  options: [.prettyPrinted, .sortedKeys]
-              ),
-              let str = String(data: pretty, encoding: .utf8) else {
-            return request.toolInput.description
+        do {
+            let data = try JSONEncoder.sentinelEncoder.encode(request.toolInput)
+            let obj = try JSONSerialization.jsonObject(with: data)
+            let pretty = try JSONSerialization.data(
+                withJSONObject: obj,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+            return String(data: pretty, encoding: .utf8) ?? request.toolInput.description
+        } catch {
+            // Show raw description with error hint rather than silently degrading
+            return "⚠ \(error.localizedDescription)\n\n\(request.toolInput.description)"
         }
-        return str
     }
 
     // MARK: - Action Buttons
 
     private var actionButtons: some View {
-        HStack(spacing: 12) {
-            // Block
-            Button(role: .destructive) {
-                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                store.sendDecision(requestId: request.id, decision: .blocked)
-                dismiss()
-            } label: {
-                Label(String(localized: "拒绝"), systemImage: "xmark.circle.fill")
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                // Block
+                Button(role: .destructive) {
+                    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                    store.sendDecision(requestId: request.id, decision: .blocked)
+                    dismiss()
+                } label: {
+                    Label(String(localized: "拒绝"), systemImage: "xmark.circle.fill")
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                }
+                .buttonStyle(.bordered)
+
+                // Allow
+                Button {
+                    handleAllow()
+                } label: {
+                    Group {
+                        if isAuthenticating {
+                            ProgressView()
+                        } else if request.riskLevel == .requireFaceID {
+                            Label(String(localized: "允许"), systemImage: "faceid")
+                        } else {
+                            Label(String(localized: "允许"), systemImage: "checkmark.circle.fill")
+                        }
+                    }
                     .frame(maxWidth: .infinity)
                     .frame(height: 50)
-            }
-            .buttonStyle(.bordered)
-
-            // Allow
-            Button {
-                handleAllow()
-            } label: {
-                Group {
-                    if isAuthenticating {
-                        ProgressView()
-                    } else if request.riskLevel == .requireFaceID {
-                        Label(String(localized: "允许"), systemImage: "faceid")
-                    } else {
-                        Label(String(localized: "允许"), systemImage: "checkmark.circle.fill")
-                    }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
+                .buttonStyle(.borderedProminent)
+                .disabled(isAuthenticating)
             }
-            .buttonStyle(.borderedProminent)
-            .disabled(isAuthenticating)
+
+            // Trust timer — only for non-FaceID tools (high-risk shouldn't be auto-trusted)
+            if request.riskLevel != .requireFaceID {
+                Button {
+                    showTrustOptions = true
+                } label: {
+                    Label(String(localized: "允许并信任一段时间"), systemImage: "clock.badge.checkmark")
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 40)
+                }
+                .buttonStyle(.bordered)
+                .tint(.green)
+                .confirmationDialog(
+                    String(localized: "信任 \(request.toolName)"),
+                    isPresented: $showTrustOptions,
+                    titleVisibility: .visible
+                ) {
+                    ForEach(TrustManager.durations, id: \.minutes) { option in
+                        Button(option.label) {
+                            trustManager.trust(toolName: request.toolName, minutes: option.minutes)
+                            store.sendDecision(requestId: request.id, decision: .allowed)
+                            dismiss()
+                        }
+                    }
+                    Button(String(localized: "取消"), role: .cancel) {}
+                } message: {
+                    Text(String(localized: "信任期内，\(request.toolName) 的请求将自动允许"))
+                }
+            }
         }
         .padding()
         .background(.bar)
@@ -183,49 +222,22 @@ struct ApprovalDetailView: View {
     // MARK: - Allow Logic
 
     private func handleAllow() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        if request.riskLevel == .requireFaceID {
-            isAuthenticating = true
-            Task {
-                do {
-                    try await BiometricService.authenticate(
-                        reason: String(localized: "验证身份以允许高风险操作")
-                    )
-                    store.sendDecision(requestId: request.id, decision: .allowed)
-                    dismiss()
-                } catch {
-                    authError = error.localizedDescription
-                }
-                isAuthenticating = false
-            }
-        } else {
-            store.sendDecision(requestId: request.id, decision: .allowed)
-            dismiss()
-        }
+        ApprovalHelper.handleAllow(
+            request: request,
+            onSuccess: { store.sendDecision(requestId: request.id, decision: .allowed); dismiss() },
+            onAuthStart: { isAuthenticating = true },
+            onAuthEnd: { isAuthenticating = false },
+            onError: { authError = $0 }
+        )
     }
 
     // MARK: - Helpers
 
     private var humanReadableToolName: String {
-        let name = request.toolName.lowercased()
-        if name.contains("write") || name.contains("edit") {
-            return String(localized: "文件写入")
-        } else if name.contains("bash") || name.contains("exec") {
-            return String(localized: "命令执行")
-        } else if name.contains("read") {
-            return String(localized: "文件读取")
-        } else if name.contains("grep") || name.contains("search") || name.contains("glob") {
-            return String(localized: "文件搜索")
-        } else if name.contains("delete") || name.contains("rm") {
-            return String(localized: "文件删除")
-        } else {
-            return String(localized: "工具调用")
-        }
+        ApprovalHelper.humanReadableToolName(for: request.toolName)
     }
 
     private var extractPath: String? {
-        request.toolInput["file_path"]?.description
-            ?? request.toolInput["path"]?.description
-            ?? request.toolInput["command"]?.description
+        ApprovalHelper.extractPath(from: request)
     }
 }
