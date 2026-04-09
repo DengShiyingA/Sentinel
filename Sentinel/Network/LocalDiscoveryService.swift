@@ -29,6 +29,7 @@ final class LocalDiscoveryService {
     private var lastPort: UInt16?
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempts = 0
+    private static let maxBufferSize = SentinelConfig.maxBufferSize
 
     // MARK: - Discovery
 
@@ -124,7 +125,14 @@ final class LocalDiscoveryService {
         lastHost = host
         lastPort = port
 
-        let endpoint = NWEndpoint.hostPort(host: .init(host), port: .init(rawValue: port)!)
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            log.error("Invalid port: \(port)")
+            Task { @MainActor in
+                self.connectionError = "无效端口: \(port)"
+            }
+            return
+        }
+        let endpoint = NWEndpoint.hostPort(host: .init(host), port: nwPort)
         let params = NWParameters.tcp
         connection = NWConnection(to: endpoint, using: params)
 
@@ -161,7 +169,7 @@ final class LocalDiscoveryService {
 
     private func scheduleReconnect() {
         guard let host = lastHost, let port = lastPort else { return }
-        guard reconnectAttempts < 10 else {
+        guard reconnectAttempts < SentinelConfig.maxReconnectAttempts else {
             log.warning("Max reconnect attempts reached")
             return
         }
@@ -210,6 +218,14 @@ final class LocalDiscoveryService {
 
             if let data = content {
                 self.buffer.append(data)
+                if self.buffer.count > Self.maxBufferSize {
+                    log.error("Buffer exceeded \(Self.maxBufferSize) bytes, dropping connection")
+                    self.buffer = Data()
+                    self.connection?.cancel()
+                    ErrorBus.shared.post( String(localized: "数据缓冲区溢出，连接已断开"),
+                                         recovery: String(localized: "将自动重连"))
+                    return
+                }
                 self.processBuffer()
             }
 
@@ -248,12 +264,18 @@ final class LocalDiscoveryService {
                 continue
             }
 
-            var payloadData = Data()
+            let payloadData: Data
             if let dataObj = json["data"] {
                 payloadData = (try? JSONSerialization.data(withJSONObject: dataObj)) ?? Data()
+            } else {
+                payloadData = Data()
             }
 
-            onEvent?(event, payloadData)
+            // Ensure callbacks run on MainActor for consistent threading
+            let handler = onEvent
+            Task { @MainActor in
+                handler?(event, payloadData)
+            }
         }
     }
 }

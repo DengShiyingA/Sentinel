@@ -217,6 +217,9 @@ final class ApprovalStore {
                     DecisionRecord(id: requestId, request: req, decision: decision, decidedAt: Date()),
                     at: 0
                 )
+                if self.decisionHistory.count > SentinelConfig.maxHistoryItems {
+                    self.decisionHistory.removeLast(self.decisionHistory.count - SentinelConfig.maxHistoryItems)
+                }
             }
             self.removeRequest(id: requestId)
             self.resolvedCount += 1

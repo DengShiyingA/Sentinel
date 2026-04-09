@@ -60,6 +60,8 @@ final class CloudKitTransport: TransportProtocol {
         pollTask = nil
         isConnected = false
         database = nil
+        processedIds.removeAll()
+        processedOrder.removeAll()
     }
 
     func sendRulesUpdate(rules: [[String: Any]]) async throws {

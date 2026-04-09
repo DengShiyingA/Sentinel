@@ -62,9 +62,13 @@ final class PairingService {
 
     // MARK: - Parse Deep Link
 
-    /// Parse sentinel://pair/<base64url_secret> into raw secret Data (32 bytes)
-    static func parseDeepLink(_ link: String) throws -> Data {
-        // Accept both "sentinel://pair/xxx" and pasted full URL
+    struct DeepLinkResult {
+        let secret: Data
+        let serverURL: String?  // Embedded in link since v2, e.g. sentinel://pair/<secret>?s=<url>
+    }
+
+    /// Parse sentinel://pair/<base64url_secret>?s=<serverURL> into secret + optional server URL
+    static func parseDeepLink(_ link: String) throws -> DeepLinkResult {
         let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard let url = URL(string: trimmed),
@@ -89,7 +93,11 @@ final class PairingService {
             throw PairingError.invalidSecret
         }
 
-        return data
+        // Extract embedded server URL from ?s= query parameter
+        let components = URLComponents(string: trimmed)
+        let serverURL = components?.queryItems?.first(where: { $0.name == "s" })?.value
+
+        return DeepLinkResult(secret: data, serverURL: serverURL)
     }
 
     // MARK: - Full Pair Flow
@@ -125,7 +133,13 @@ final class PairingService {
         self.macDeviceId = pairResult.pairedDeviceId
 
         if let macPubKey = pairResult.macPublicKey {
-            try? KeychainHelper.saveString(key: "sentinel.macPublicKey", value: macPubKey)
+            do {
+                try KeychainHelper.saveString(key: "sentinel.macPublicKey", value: macPubKey)
+            } catch {
+                log.error("Failed to save Mac public key to Keychain: \(error.localizedDescription)")
+                ErrorBus.shared.post( String(localized: "无法保存 Mac 公钥到钥匙串"),
+                                     recovery: String(localized: "请重新配对"))
+            }
         }
 
         log.info("Paired with Mac device: \(pairResult.pairedDeviceId)")
