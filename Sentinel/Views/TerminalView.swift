@@ -148,6 +148,18 @@ struct TerminalView: View {
                 }
             )
             .padding(.vertical, 4)
+
+        case .suggestion(let suggestion):
+            InlineSuggestionCard(
+                suggestion: suggestion,
+                onCreateRule: { store.createRuleFromSuggestion(suggestion) },
+                onDismiss: { store.dismissSuggestion(suggestion) }
+            )
+            .padding(.vertical, 4)
+
+        case .summary(let summary):
+            InlineSummaryCard(summary: summary)
+                .padding(.vertical, 4)
         }
     }
 

@@ -12,6 +12,8 @@ struct TimelineEntry: Identifiable {
         case claude(String)
         case approval(ApprovalRequest)
         case approvalGroup(ApprovalGroup)
+        case suggestion(RuleSuggestion)
+        case summary(SessionSummary)
     }
 }
 

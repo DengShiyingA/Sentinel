@@ -26,6 +26,15 @@ final class ApprovalStore {
     /// History of resolved approval requests with their decisions.
     var decisionHistory: [DecisionRecord] = []
 
+    /// Pending rule suggestions shown in timeline.
+    var pendingSuggestions: [RuleSuggestion] = []
+    /// Dismissed suggestion pattern keys — never suggest again.
+    private var dismissedPatterns: Set<String> = []
+    /// Session summaries shown in timeline.
+    var sessionSummaries: [SessionSummary] = []
+    /// Timestamp of last .stop event for session boundary tracking.
+    private var lastStopTimestamp: Date?
+
     /// Cached unified timeline — rebuilt only when underlying data changes.
     private(set) var timeline: [TimelineEntry] = []
     /// Monotonic counter used as tie-breaker for stable sorting.
@@ -80,6 +89,22 @@ final class ApprovalStore {
                     id: "ag-\(group.id)", time: earliest, order: approvalBase + i,
                     kind: .approvalGroup(group)))
             }
+        }
+
+        // Suggestions
+        let sugBase = approvalBase + groups.count
+        for (i, suggestion) in pendingSuggestions.enumerated() {
+            entries.append(TimelineEntry(
+                id: "sug-\(suggestion.id)", time: suggestion.timestamp, order: sugBase + i,
+                kind: .suggestion(suggestion)))
+        }
+
+        // Session summaries
+        let sumBase = sugBase + pendingSuggestions.count
+        for (i, summary) in sessionSummaries.enumerated() {
+            entries.append(TimelineEntry(
+                id: "sum-\(summary.id)", time: summary.timestamp, order: sumBase + i,
+                kind: .summary(summary)))
         }
 
         // Stable sort: by time first, then insertion order for tie-breaking
@@ -170,11 +195,19 @@ final class ApprovalStore {
             self.rebuildTimeline()
             log.info("Activity: \(item.type.rawValue) — \(item.summary)")
 
-            // System notification for stop events
+            // Session summary for stop events
             if item.type == .stop {
+                let summary = SessionSummaryBuilder.build(
+                    history: self.decisionHistory,
+                    since: self.lastStopTimestamp,
+                    stopItem: item
+                )
+                self.sessionSummaries.append(summary)
+                self.lastStopTimestamp = item.timestamp
+
                 NotificationService.shared.postSimpleNotification(
-                    title: item.isError ? "❌ Claude Code" : "✅ Claude Code",
-                    body: item.summary
+                    title: item.isError ? "❌ Claude Code 任务失败" : "✅ Claude Code 任务完成",
+                    body: summary.displaySubtitle
                 )
             }
         }
@@ -222,6 +255,17 @@ final class ApprovalStore {
             }
             self.removeRequest(id: requestId)
             self.resolvedCount += 1
+
+            // Check for rule suggestion after allowing
+            if decision == .allowed {
+                if let suggestion = SuggestionEngine.analyze(
+                    history: self.decisionHistory,
+                    dismissedPatterns: self.dismissedPatterns
+                ) {
+                    self.pendingSuggestions.append(suggestion)
+                    self.rebuildTimeline()
+                }
+            }
         }
         log.info("Decision: \(requestId) → \(decision.rawValue)")
     }
@@ -230,6 +274,34 @@ final class ApprovalStore {
         for request in group.requests {
             sendDecision(requestId: request.id, decision: decision)
         }
+    }
+
+    @MainActor
+    func dismissSuggestion(_ suggestion: RuleSuggestion) {
+        let key = SuggestionEngine.patternKey(toolName: suggestion.toolName, pathPattern: suggestion.pathPattern)
+        dismissedPatterns.insert(key)
+        pendingSuggestions.removeAll { $0.id == suggestion.id }
+        rebuildTimeline()
+    }
+
+    @MainActor
+    func createRuleFromSuggestion(_ suggestion: RuleSuggestion) {
+        let rule = CustomRule(
+            id: UUID().uuidString,
+            toolPattern: suggestion.toolName,
+            pathPattern: suggestion.pathPattern,
+            risk: "auto_allow",
+            description: String(localized: "自动规则: \(suggestion.toolName)")
+        )
+        var rules = RulesView.loadCustomRules()
+        rules.append(rule)
+        RulesView.saveCustomRules(rules)
+
+        let key = SuggestionEngine.patternKey(toolName: suggestion.toolName, pathPattern: suggestion.pathPattern)
+        dismissedPatterns.insert(key)
+        pendingSuggestions.removeAll { $0.id == suggestion.id }
+        rebuildTimeline()
+        log.info("Created rule from suggestion: \(suggestion.toolName) \(suggestion.pathPattern ?? "*")")
     }
 
     @MainActor
