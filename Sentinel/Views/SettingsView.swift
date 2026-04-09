@@ -8,8 +8,6 @@ struct SettingsView: View {
     @Environment(ApprovalStore.self) private var store
     @Environment(TrustManager.self) private var trustManager
 
-    @State private var showUnpairAlert = false
-    @State private var showPairingSheet = false
     @State private var showManualConnect = false
     @State private var connectionMode = ConnectionMode.current
     @State private var manualHost = "localhost"
@@ -69,23 +67,6 @@ struct SettingsView: View {
                     if connectionMode == .cloudkit {
                         LabeledContent(String(localized: "同步")) {
                             Text("iCloud").foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if connectionMode == .server {
-                        if pairing.isPaired {
-                            LabeledContent(String(localized: "服务器")) {
-                                Text(pairing.serverURL)
-                                    .font(.caption.monospaced())
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                        } else {
-                            Button {
-                                showPairingSheet = true
-                            } label: {
-                                Label(String(localized: "配对服务器"), systemImage: "qrcode")
-                            }
                         }
                     }
 
@@ -209,17 +190,6 @@ struct SettingsView: View {
                     }
                 }
 
-                // Unpair (server mode only)
-                if connectionMode == .server && pairing.isPaired {
-                    Section {
-                        Button(role: .destructive) {
-                            showUnpairAlert = true
-                        } label: {
-                            Label(String(localized: "解除配对"), systemImage: "link.badge.plus")
-                        }
-                    }
-                }
-
                 // About
                 Section(String(localized: "关于")) {
                     LabeledContent(String(localized: "版本")) {
@@ -233,15 +203,6 @@ struct SettingsView: View {
             }
             .listStyle(.insetGrouped)
             .navigationTitle(String(localized: "设置"))
-            .alert(String(localized: "解除配对"), isPresented: $showUnpairAlert) {
-                Button(String(localized: "取消"), role: .cancel) {}
-                Button(String(localized: "解除配对"), role: .destructive) {
-                    relay.disconnect()
-                    pairing.unpair()
-                }
-            } message: {
-                Text(String(localized: "确定要解除配对吗？"))
-            }
             .alert(String(localized: "手动连接"), isPresented: $showManualConnect) {
                 TextField(String(localized: "主机地址"), text: $manualHost)
                     .autocorrectionDisabled()
@@ -258,9 +219,6 @@ struct SettingsView: View {
                 }
             } message: {
                 Text(String(localized: "Simulator 测试请输入 localhost:7750"))
-            }
-            .sheet(isPresented: $showPairingSheet) {
-                PairingView()
             }
         }
     }

@@ -51,15 +51,6 @@ final class RelayService {
         isConnected = false
         connectionError = nil
 
-        // Validate: server mode requires pairing
-        if mode == .server && !pairing.isPaired {
-            connectionError = String(localized: "请先配对服务器")
-            currentMode = mode
-            ConnectionMode.current = mode
-            log.warning("Server mode requires pairing — not connected")
-            return
-        }
-
         // Update mode
         currentMode = mode
         ConnectionMode.current = mode

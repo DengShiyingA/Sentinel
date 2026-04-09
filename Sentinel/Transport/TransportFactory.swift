@@ -12,12 +12,6 @@ enum TransportFactory {
             return LocalTransport(discovery: local)
         case .cloudkit:
             return CloudKitTransport()
-        case .server:
-            return ServerTransport(
-                socket: socket,
-                serverURL: pairing.serverURL,
-                deviceId: pairing.deviceId
-            )
         }
     }
 }
