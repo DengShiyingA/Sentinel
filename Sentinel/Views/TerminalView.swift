@@ -378,9 +378,62 @@ struct TerminalView: View {
             \(String(localized: "响应")): \(stats.averageResponseTime < 1 ? "< 1s" : String(format: "%.1fs", stats.averageResponseTime))
             """
 
+        case "untrust":
+            let count = trustManager.activeTrusts.count
+            trustManager.revokeAll()
+            commandResult = count > 0
+                ? String(localized: "🔓 已清除 \(count) 条临时信任")
+                : String(localized: "无活跃信任")
+
+        case "history":
+            let recent = store.decisionHistory.prefix(10)
+            if recent.isEmpty {
+                commandResult = String(localized: "暂无决策记录")
+            } else {
+                let list = recent.map { record in
+                    let icon = record.decision == .allowed ? "✅" : "❌"
+                    let path = ApprovalHelper.extractPath(from: record.request) ?? ""
+                    let time = record.decidedAt.formatted(date: .omitted, time: .shortened)
+                    return "\(icon) \(record.request.toolName) \(path) · \(time)"
+                }.joined(separator: "\n")
+                commandResult = "\(String(localized: "最近决策")) (\(recent.count)):\n\(list)"
+            }
+
+        case "budget":
+            let stats = Statistics.build(history: store.decisionHistory, resolvedCount: store.resolvedCount)
+            commandResult = """
+            \(String(localized: "今日调用")): \(stats.totalCount)
+            \(String(localized: "工具分布")): \(stats.toolBreakdown.map { "\($0.toolName):\($0.count)" }.joined(separator: " | "))
+            """
+
+        case "mode":
+            let current = ConnectionMode.current
+            let modes = ConnectionMode.allCases.map { mode in
+                mode == current ? "[\(mode.label)]" : mode.label
+            }.joined(separator: " · ")
+            commandResult = "\(String(localized: "连接模式")): \(modes)"
+
         case "reconnect":
             relay.connectCurrentMode()
             commandResult = String(localized: "🔄 正在重新连接...")
+
+        case "doctor":
+            var lines: [String] = []
+            lines.append(relay.isConnected ? "✅ \(String(localized: "连接正常"))" : "❌ \(String(localized: "未连接"))")
+            lines.append("📡 \(String(localized: "模式")): \(ConnectionMode.current.label)")
+            if let error = relay.connectionError {
+                lines.append("⚠️ \(error)")
+            }
+            lines.append("📋 \(String(localized: "规则")): \(RulesView.loadCustomRules().count) \(String(localized: "条自定义"))")
+            lines.append("🔒 \(String(localized: "信任")): \(trustManager.activeTrusts.count) \(String(localized: "条活跃"))")
+            lines.append("📊 \(String(localized: "待处理")): \(store.pendingRequests.count) | \(String(localized: "已处理")): \(store.resolvedCount)")
+            let notif = NotificationService.shared.isPermissionGranted ? "✅" : "❌"
+            lines.append("\(notif) \(String(localized: "通知权限"))")
+            commandResult = lines.joined(separator: "\n")
+
+        case "help":
+            let list = SlashCommand.all.map { "\($0.label)  \($0.description)" }.joined(separator: "\n")
+            commandResult = list
 
         default:
             commandResult = String(localized: "未知命令: /\(cmd.id)")
