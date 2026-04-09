@@ -21,16 +21,12 @@ struct TerminalView: View {
             .navigationTitle(String(localized: "终端"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(relay.isConnected ? .green : .gray)
-                            .frame(width: 8, height: 8)
-                        Text(relay.isConnected
-                             ? String(localized: "运行中")
-                             : String(localized: "等待中"))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
+                    Circle()
+                        .fill(relay.isConnected ? .green : .gray.opacity(0.5))
+                        .frame(width: 8, height: 8)
+                        .accessibilityLabel(relay.isConnected
+                            ? String(localized: "已连接")
+                            : String(localized: "未连接"))
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !store.timeline.isEmpty {
@@ -91,15 +87,24 @@ struct TerminalView: View {
     private func entryRow(_ entry: TimelineEntry) -> some View {
         switch entry.kind {
         case .terminal(let text):
-            HStack(alignment: .top, spacing: 6) {
-                Text(entry.time, format: .dateTime.hour().minute().second())
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 55, alignment: .leading)
+            if isCompactLine(text) {
+                // Compact single-line for approval results and tool completions
                 Text(text)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(lineColor(text))
-                    .textSelection(.enabled)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(lineColor(text).opacity(0.7))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                HStack(alignment: .top, spacing: 6) {
+                    Text(entry.time, format: .dateTime.hour().minute().second())
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 55, alignment: .leading)
+                    Text(text)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(lineColor(text))
+                        .textSelection(.enabled)
+                }
             }
 
         case .user(let text):
@@ -248,6 +253,11 @@ struct TerminalView: View {
         guard !text.isEmpty else { return }
         store.sendUserMessage(text)
         messageText = ""
+    }
+
+    /// Lines that are approval results or tool completions — render compact.
+    private func isCompactLine(_ text: String) -> Bool {
+        text.contains("— allowed") || text.contains("— blocked") || text.hasPrefix("[")
     }
 
     private func lineColor(_ text: String) -> Color {
