@@ -9,7 +9,8 @@ export interface ApprovalPayload {
   toolName: string;
   toolInput: Record<string, unknown>;
   riskLevel: string;
-  diff?: string;  // Git-style unified diff (Write/Edit only)
+  diff?: string;
+  contextSummary?: string;
 }
 
 export interface Transport {

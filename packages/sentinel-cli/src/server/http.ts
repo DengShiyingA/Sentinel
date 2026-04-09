@@ -131,11 +131,15 @@ export function createHttpServer(port: number = 7749): express.Application {
       // 为 Write/Edit 生成 diff
       const diff = generateDiff(tool_name, tool_input as Record<string, unknown>);
 
+      const contextSummary = (req.body as Record<string, unknown>).context_summary as string | undefined
+        ?? (req.body as Record<string, unknown>).contextSummary as string | undefined;
+
       const remoteId = await transport.sendApprovalRequest({
         toolName: tool_name,
         toolInput: tool_input as Record<string, unknown>,
         riskLevel: riskToLevel(match.action),
         diff,
+        contextSummary,
       });
 
       log.info(`[${transport.mode}] Waiting: ${remoteId}`);

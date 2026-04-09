@@ -30,6 +30,10 @@ struct InlineApprovalGroupCard: View {
         !hasHighRisk && group.requests.allSatisfy { $0.riskLevel != .requireFaceID }
     }
 
+    private var groupContext: String? {
+        group.requests.compactMap(\.contextSummary).first
+    }
+
     private var liveRequests: [ApprovalRequest] {
         group.requests.filter { !individualDecisions.contains($0.id) }
     }
@@ -53,6 +57,9 @@ struct InlineApprovalGroupCard: View {
     private var pendingView: some View {
         VStack(alignment: .leading, spacing: 10) {
             headerRow
+            if let ctx = groupContext, !ctx.isEmpty {
+                ContextSummaryView(summary: ctx, compact: true)
+            }
             fileList
             if showHighRiskHint {
                 HStack(spacing: 6) {

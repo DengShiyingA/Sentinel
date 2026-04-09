@@ -274,6 +274,7 @@ export class LocalTransport implements Transport {
       timestamp: new Date().toISOString(),
       timeoutAt: new Date(Date.now() + 120_000).toISOString(),
       ...(payload.diff ? { diff: payload.diff } : {}),
+      ...(payload.contextSummary ? { contextSummary: payload.contextSummary } : {}),
     });
 
     return requestId;

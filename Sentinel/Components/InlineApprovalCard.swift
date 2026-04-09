@@ -64,6 +64,10 @@ struct InlineApprovalCard: View {
                 CountdownText(timeoutAt: request.timeoutAt)
             }
 
+            if let ctx = request.contextSummary, !ctx.isEmpty {
+                ContextSummaryView(summary: ctx)
+            }
+
             if let diff = request.diff, !diff.isEmpty {
                 DiffView(diff: diff)
             }

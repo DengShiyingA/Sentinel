@@ -129,7 +129,8 @@ final class CloudKitTransport: TransportProtocol {
                     timestamp: Date(timeIntervalSince1970: Double(timestamp) / 1000),
                     macDeviceId: "cloudkit",
                     timeoutAt: Date(timeIntervalSince1970: Double(timeoutAt) / 1000),
-                    diff: nil
+                    diff: nil,
+                    contextSummary: nil
                 )
 
                 onRequest?(request)
