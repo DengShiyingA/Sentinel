@@ -123,33 +123,28 @@ struct TerminalView: View {
             }
 
         case .user(let text):
-            HStack {
-                Spacer()
-                Text(text)
-                    .font(.subheadline)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(.blue, in: RoundedRectangle(cornerRadius: Theme.bubbleRadius))
-                    .foregroundStyle(.white)
+            HStack(alignment: .top, spacing: 6) {
+                Text(entry.time, format: .dateTime.hour().minute().second())
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 55, alignment: .leading)
+                Text("> \(text)")
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(.blue)
+                    .textSelection(.enabled)
             }
-            .padding(.vertical, 2)
 
         case .claude(let text):
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Claude")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.purple)
-                    Text(text)
-                        .font(.subheadline)
-                        .textSelection(.enabled)
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color(.systemGray6), in: RoundedRectangle(cornerRadius: Theme.bubbleRadius))
-                Spacer()
+            HStack(alignment: .top, spacing: 6) {
+                Text(entry.time, format: .dateTime.hour().minute().second())
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 55, alignment: .leading)
+                Text(text)
+                    .font(.system(size: 13, design: .monospaced))
+                    .foregroundStyle(.purple)
+                    .textSelection(.enabled)
             }
-            .padding(.vertical, 2)
 
         case .approval(let request):
             InlineApprovalCard(request: request) { decision in
