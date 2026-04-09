@@ -200,38 +200,68 @@ struct TerminalView: View {
 
     private var slashCommandList: some View {
         let commands = SlashCommand.matching(messageText)
+        let localCmds = commands.filter { $0.category == .local }
+        let claudeCmds = commands.filter { $0.category == .claude }
 
         return ScrollView {
-            LazyVStack(spacing: 2) {
-                ForEach(commands) { cmd in
-                    Button {
-                        executeCommand(cmd)
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: cmd.icon)
-                                .font(.subheadline)
-                                .foregroundStyle(.teal)
-                                .frame(width: 24)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(cmd.label)
-                                    .font(.subheadline.weight(.medium).monospaced())
-                                    .foregroundStyle(.primary)
-                                Text(cmd.description)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
+            LazyVStack(spacing: 0) {
+                if !localCmds.isEmpty {
+                    sectionHeader(String(localized: "Sentinel"))
+                    ForEach(localCmds) { cmd in
+                        commandRow(cmd, color: .teal)
                     }
-                    .buttonStyle(.plain)
+                }
+                if !claudeCmds.isEmpty {
+                    sectionHeader(String(localized: "Claude Code"))
+                    ForEach(claudeCmds) { cmd in
+                        commandRow(cmd, color: .purple)
+                    }
                 }
             }
         }
-        .frame(maxHeight: 240)
+        .frame(maxHeight: 280)
         .background(Color(.secondarySystemGroupedBackground))
         .transition(Theme.springTransition)
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+    }
+
+    private func commandRow(_ cmd: SlashCommand, color: Color) -> some View {
+        Button {
+            executeCommand(cmd)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: cmd.icon)
+                    .font(.subheadline)
+                    .foregroundStyle(color)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(cmd.label)
+                        .font(.subheadline.weight(.medium).monospaced())
+                        .foregroundStyle(.primary)
+                    Text(cmd.description)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                if cmd.category == .claude {
+                    Image(systemName: "arrow.up.right")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+        }
+        .buttonStyle(.plain)
     }
 
     private func newApprovalBanner(scrollToBottom: @escaping () -> Void) -> some View {
@@ -325,6 +355,16 @@ struct TerminalView: View {
         Haptic.light()
         messageText = ""
         showSlashMenu = false
+
+        if cmd.category == .claude {
+            guard relay.isConnected else {
+                commandResult = String(localized: "❌ 未连接 Claude Code")
+                return
+            }
+            store.sendUserMessage(cmd.label)
+            commandResult = String(localized: "📤 已发送 \(cmd.label) 到 Claude Code")
+            return
+        }
 
         switch cmd.id {
         case "block":
