@@ -26,52 +26,69 @@ final class ApprovalStore {
     /// History of resolved approval requests with their decisions.
     var decisionHistory: [DecisionRecord] = []
 
-    /// Unified timeline entries for the terminal view.
-    var timeline: [TimelineEntry] {
+    /// Cached unified timeline — rebuilt only when underlying data changes.
+    private(set) var timeline: [TimelineEntry] = []
+    /// Monotonic counter used as tie-breaker for stable sorting.
+    private var insertionCounter: Int = 0
+
+    /// Rebuild the cached timeline. Called after any mutation to terminalLines, activityFeed, or pendingRequests.
+    @MainActor
+    private func rebuildTimeline() {
         var entries: [TimelineEntry] = []
 
-        for line in terminalLines {
+        for (i, line) in terminalLines.enumerated() {
             entries.append(TimelineEntry(
-                id: line.id, time: line.timestamp, kind: .terminal(line.text)))
+                id: line.id, time: line.timestamp, order: i, kind: .terminal(line.text)))
         }
 
-        for item in activityFeed {
+        let baseOrder = terminalLines.count
+        for (i, item) in activityFeed.reversed().enumerated() {
             switch item.type {
             case .userMessage:
                 entries.append(TimelineEntry(
-                    id: "u-\(item.id)", time: item.timestamp, kind: .user(item.summary)))
+                    id: "u-\(item.id)", time: item.timestamp, order: baseOrder + i,
+                    kind: .user(item.summary)))
             case .claudeResponse:
                 entries.append(TimelineEntry(
-                    id: "c-\(item.id)", time: item.timestamp, kind: .claude(item.summary)))
+                    id: "c-\(item.id)", time: item.timestamp, order: baseOrder + i,
+                    kind: .claude(item.summary)))
             case .notification:
                 entries.append(TimelineEntry(
-                    id: "n-\(item.id)", time: item.timestamp,
+                    id: "n-\(item.id)", time: item.timestamp, order: baseOrder + i,
                     kind: .terminal("📢 \(item.summary)")))
             case .stop:
                 let prefix = item.isError ? "❌" : "✅"
                 entries.append(TimelineEntry(
-                    id: "s-\(item.id)", time: item.timestamp,
+                    id: "s-\(item.id)", time: item.timestamp, order: baseOrder + i,
                     kind: .terminal("\(prefix) \(item.summary)")))
             default:
                 break
             }
         }
 
+        let approvalBase = baseOrder + activityFeed.count
         let groups = groupedApprovals()
-        for group in groups {
+        for (i, group) in groups.enumerated() {
             if group.requests.count == 1 {
                 let req = group.requests[0]
                 entries.append(TimelineEntry(
-                    id: "a-\(req.id)", time: req.timestamp, kind: .approval(req)))
+                    id: "a-\(req.id)", time: req.timestamp, order: approvalBase + i,
+                    kind: .approval(req)))
             } else {
                 let earliest = group.requests.map(\.timestamp).min() ?? Date()
                 entries.append(TimelineEntry(
-                    id: "ag-\(group.id)", time: earliest, kind: .approvalGroup(group)))
+                    id: "ag-\(group.id)", time: earliest, order: approvalBase + i,
+                    kind: .approvalGroup(group)))
             }
         }
 
-        entries.sort { $0.time < $1.time }
-        return entries
+        // Stable sort: by time first, then insertion order for tie-breaking
+        entries.sort { a, b in
+            if a.time != b.time { return a.time < b.time }
+            return a.order < b.order
+        }
+
+        timeline = entries
     }
 
     /// Group pending requests by tool name when they arrive within 3 seconds.
@@ -122,6 +139,7 @@ final class ApprovalStore {
             if self.terminalLines.count > SentinelConfig.maxTerminalLines {
                 self.terminalLines.removeFirst(self.terminalLines.count - SentinelConfig.maxTerminalLines)
             }
+            self.rebuildTimeline()
         }
     }
 
@@ -149,6 +167,7 @@ final class ApprovalStore {
         Task { @MainActor in
             self.activityFeed.insert(item, at: 0)
             if self.activityFeed.count > SentinelConfig.maxActivityItems { self.activityFeed.removeLast() }
+            self.rebuildTimeline()
             log.info("Activity: \(item.type.rawValue) — \(item.summary)")
 
             // System notification for stop events
@@ -175,6 +194,7 @@ final class ApprovalStore {
         Task { @MainActor in
             guard !self.pendingRequests.contains(where: { $0.id == request.id }) else { return }
             self.pendingRequests.insert(request, at: 0)
+            self.rebuildTimeline()
             log.info("New request: \(request.id) tool=\(request.toolName)")
 
             NotificationService.shared.postApprovalNotification(
@@ -207,6 +227,12 @@ final class ApprovalStore {
         for request in group.requests {
             sendDecision(requestId: request.id, decision: decision)
         }
+    }
+
+    @MainActor
+    func clearTerminal() {
+        terminalLines.removeAll()
+        rebuildTimeline()
     }
 
     // MARK: - Send Message to Mac
@@ -253,6 +279,7 @@ final class ApprovalStore {
     @MainActor
     private func removeRequest(id: String) {
         pendingRequests.removeAll { $0.id == id }
+        rebuildTimeline()
     }
 
     func request(for id: String) -> ApprovalRequest? {

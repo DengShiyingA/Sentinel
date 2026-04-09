@@ -3,6 +3,7 @@ import Foundation
 struct TimelineEntry: Identifiable {
     let id: String
     let time: Date
+    let order: Int
     let kind: Kind
 
     enum Kind {

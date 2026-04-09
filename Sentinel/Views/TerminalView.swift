@@ -35,7 +35,7 @@ struct TerminalView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     if !store.timeline.isEmpty {
                         Button {
-                            store.terminalLines.removeAll()
+                            store.clearTerminal()
                         } label: {
                             Image(systemName: "trash")
                                 .font(.caption)
