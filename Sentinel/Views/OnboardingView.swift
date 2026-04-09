@@ -72,12 +72,18 @@ struct OnboardingView: View {
             Text(String(localized: "连接方式"))
                 .font(.title.bold())
 
-            VStack(spacing: 16) {
+            VStack(spacing: 12) {
+                connectOption(
+                    icon: "qrcode.viewfinder",
+                    color: .orange,
+                    title: String(localized: "扫码连接"),
+                    desc: String(localized: "扫描终端二维码，一秒连接")
+                )
                 connectOption(
                     icon: "wifi",
                     color: .green,
                     title: String(localized: "局域网"),
-                    desc: String(localized: "同一 WiFi 自动发现，零配置")
+                    desc: String(localized: "同一 WiFi 自动发现")
                 )
                 connectOption(
                     icon: "icloud",

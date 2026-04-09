@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Environment(TrustManager.self) private var trustManager
 
     @State private var showManualConnect = false
+    @State private var showQRScanner = false
     @State private var connectionMode = ConnectionMode.current
     @State private var manualHost = "localhost"
     @State private var manualPort = "7750"
@@ -56,7 +57,12 @@ struct SettingsView: View {
                             }
                         }
 
-                        // Manual connect (for Simulator)
+                        Button {
+                            showQRScanner = true
+                        } label: {
+                            Label(String(localized: "扫码连接"), systemImage: "qrcode.viewfinder")
+                        }
+
                         Button {
                             showManualConnect = true
                         } label: {
@@ -220,7 +226,39 @@ struct SettingsView: View {
             } message: {
                 Text(String(localized: "Simulator 测试请输入 localhost:7750"))
             }
+            .sheet(isPresented: $showQRScanner) {
+                NavigationStack {
+                    QRScannerView { code in
+                        showQRScanner = false
+                        handleQRCode(code)
+                    }
+                    .navigationTitle(String(localized: "扫码连接"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button(String(localized: "取消")) { showQRScanner = false }
+                        }
+                    }
+                }
+            }
         }
+    }
+
+    private func handleQRCode(_ code: String) {
+        guard code.hasPrefix("sentinel://") else {
+            relay.connectionError = String(localized: "无效的二维码")
+            return
+        }
+        let address = String(code.dropFirst("sentinel://".count))
+        let parts = address.split(separator: ":")
+        guard parts.count == 2,
+              let port = UInt16(parts[1]) else {
+            relay.connectionError = String(localized: "二维码格式错误")
+            return
+        }
+        Haptic.allow()
+        connectionMode = .local
+        relay.connectManual(host: String(parts[0]), port: port)
     }
 
     private var statusText: String {

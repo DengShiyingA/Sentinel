@@ -94,6 +94,17 @@ program
       if (transport instanceof LocalTransport) {
         const info = transport.getConnectionInfo();
         log.info(`iOS can connect to: ${info.ip}:${info.port}`);
+
+        try {
+          const qrcode = require('qrcode-terminal');
+          const qrData = `sentinel://${info.ip}:${info.port}`;
+          console.log('');
+          log.info('Scan QR code with Sentinel iOS app:');
+          qrcode.generate(qrData, { small: true }, (code: string) => {
+            console.log(code);
+          });
+        } catch {}
+
         transport.onRulesUpdate((rules) => setCustomRules(rules));
       }
     }
