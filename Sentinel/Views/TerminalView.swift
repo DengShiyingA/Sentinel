@@ -13,12 +13,7 @@ struct TerminalView: View {
                 if store.timeline.isEmpty {
                     emptyState
                 } else {
-                    ZStack(alignment: .top) {
-                        feedList
-                        if !isScrolledToBottom && pendingApprovalCount > 0 {
-                            newApprovalBanner
-                        }
-                    }
+                    feedList
                 }
                 Divider()
                 inputBar
@@ -58,19 +53,32 @@ struct TerminalView: View {
 
     private var feedList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(store.timeline) { entry in
-                        entryRow(entry).id(entry.id)
+            ZStack(alignment: .top) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(store.timeline) { entry in
+                            entryRow(entry).id(entry.id)
+                        }
+                        Color.clear.frame(height: 1).id("bottom-anchor")
+                            .onAppear { isScrolledToBottom = true }
+                            .onDisappear { isScrolledToBottom = false }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .onChange(of: store.timeline.count) { _, _ in
+                    if isScrolledToBottom {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            }
-            .onChange(of: store.timeline.count) { _, _ in
-                if isScrolledToBottom, let last = store.timeline.last {
-                    withAnimation(.easeOut(duration: 0.15)) {
-                        proxy.scrollTo(last.id, anchor: .bottom)
+
+                if !isScrolledToBottom && pendingApprovalCount > 0 {
+                    newApprovalBanner {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo("bottom-anchor", anchor: .bottom)
+                        }
                     }
                 }
             }
@@ -145,9 +153,9 @@ struct TerminalView: View {
 
     // MARK: - New Approval Banner
 
-    private var newApprovalBanner: some View {
+    private func newApprovalBanner(scrollToBottom: @escaping () -> Void) -> some View {
         Button {
-            isScrolledToBottom = true
+            scrollToBottom()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.circle.fill")

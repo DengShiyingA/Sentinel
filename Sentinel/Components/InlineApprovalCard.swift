@@ -144,7 +144,6 @@ struct InlineApprovalCard: View {
     // MARK: - Allow Logic
 
     private func handleAllow() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
         if request.riskLevel == .requireFaceID {
             isAuthenticating = true
             Task {
@@ -152,6 +151,7 @@ struct InlineApprovalCard: View {
                     try await BiometricService.authenticate(
                         reason: String(localized: "验证身份以允许高风险操作")
                     )
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
                     decided = .allowed
                     onDecision(.allowed)
                 } catch {
@@ -160,6 +160,7 @@ struct InlineApprovalCard: View {
                 isAuthenticating = false
             }
         } else {
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
             decided = .allowed
             onDecision(.allowed)
         }

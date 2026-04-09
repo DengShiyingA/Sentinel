@@ -80,7 +80,7 @@ final class ApprovalStore {
         let sorted = pendingRequests.sorted { $0.timestamp < $1.timestamp }
         var groups: [ApprovalGroup] = []
         var current = ApprovalGroup(
-            id: sorted[0].id, toolName: sorted[0].toolName, requests: [sorted[0]])
+            id: "grp-\(sorted[0].id)", toolName: sorted[0].toolName, requests: [sorted[0]])
 
         for i in 1..<sorted.count {
             let req = sorted[i]
@@ -92,7 +92,7 @@ final class ApprovalStore {
             } else {
                 groups.append(current)
                 current = ApprovalGroup(
-                    id: req.id, toolName: req.toolName, requests: [req])
+                    id: "grp-\(req.id)", toolName: req.toolName, requests: [req])
             }
         }
         groups.append(current)
