@@ -4,14 +4,21 @@ struct TerminalView: View {
     @Environment(ApprovalStore.self) private var store
     @Environment(RelayService.self) private var relay
     @State private var messageText = ""
+    @State private var isScrolledToBottom = true
+    @State private var pendingApprovalCount = 0
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if feedItems.isEmpty {
+                if store.timeline.isEmpty {
                     emptyState
                 } else {
-                    feedList
+                    ZStack(alignment: .top) {
+                        feedList
+                        if !isScrolledToBottom && pendingApprovalCount > 0 {
+                            newApprovalBanner
+                        }
+                    }
                 }
                 Divider()
                 inputBar
@@ -31,7 +38,7 @@ struct TerminalView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if !feedItems.isEmpty {
+                    if !store.timeline.isEmpty {
                         Button {
                             store.terminalLines.removeAll()
                         } label: {
@@ -41,54 +48,27 @@ struct TerminalView: View {
                     }
                 }
             }
-        }
-    }
-
-    private var feedItems: [FeedItem] {
-        var items: [FeedItem] = []
-
-        for line in store.terminalLines {
-            items.append(FeedItem(
-                id: line.id, time: line.timestamp, kind: .terminal(line.text)))
-        }
-
-        for item in store.activityFeed {
-            switch item.type {
-            case .userMessage:
-                items.append(FeedItem(
-                    id: "u-\(item.id)", time: item.timestamp, kind: .user(item.summary)))
-            case .claudeResponse:
-                items.append(FeedItem(
-                    id: "c-\(item.id)", time: item.timestamp, kind: .claude(item.summary)))
-            case .notification:
-                items.append(FeedItem(
-                    id: "n-\(item.id)", time: item.timestamp, kind: .terminal("📢 \(item.summary)")))
-            case .stop:
-                let prefix = item.isError ? "❌" : "✅"
-                items.append(FeedItem(
-                    id: "s-\(item.id)", time: item.timestamp, kind: .terminal("\(prefix) \(item.summary)")))
-            default:
-                break
+            .onChange(of: store.pendingRequests.count) { _, newCount in
+                pendingApprovalCount = newCount
             }
         }
-
-        items.sort { $0.time < $1.time }
-        return items
     }
+
+    // MARK: - Feed List
 
     private var feedList: some View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(feedItems) { item in
-                        feedRow(item).id(item.id)
+                    ForEach(store.timeline) { entry in
+                        entryRow(entry).id(entry.id)
                     }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
             }
-            .onChange(of: feedItems.count) { _, _ in
-                if let last = feedItems.last {
+            .onChange(of: store.timeline.count) { _, _ in
+                if isScrolledToBottom, let last = store.timeline.last {
                     withAnimation(.easeOut(duration: 0.15)) {
                         proxy.scrollTo(last.id, anchor: .bottom)
                     }
@@ -97,12 +77,14 @@ struct TerminalView: View {
         }
     }
 
+    // MARK: - Entry Row
+
     @ViewBuilder
-    private func feedRow(_ item: FeedItem) -> some View {
-        switch item.kind {
+    private func entryRow(_ entry: TimelineEntry) -> some View {
+        switch entry.kind {
         case .terminal(let text):
             HStack(alignment: .top, spacing: 6) {
-                Text(item.time, format: .dateTime.hour().minute().second())
+                Text(entry.time, format: .dateTime.hour().minute().second())
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .frame(width: 55, alignment: .leading)
@@ -140,8 +122,51 @@ struct TerminalView: View {
                 Spacer()
             }
             .padding(.vertical, 2)
+
+        case .approval(let request):
+            InlineApprovalCard(request: request) { decision in
+                store.sendDecision(requestId: request.id, decision: decision)
+            }
+            .padding(.vertical, 4)
+
+        case .approvalGroup(let group):
+            InlineApprovalGroupCard(
+                group: group,
+                onDecision: { requestId, decision in
+                    store.sendDecision(requestId: requestId, decision: decision)
+                },
+                onGroupDecision: { decision in
+                    store.sendGroupDecision(group: group, decision: decision)
+                }
+            )
+            .padding(.vertical, 4)
         }
     }
+
+    // MARK: - New Approval Banner
+
+    private var newApprovalBanner: some View {
+        Button {
+            isScrolledToBottom = true
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.caption)
+                Text(String(localized: "\(pendingApprovalCount) 个新审批"))
+                    .font(.caption.weight(.medium))
+                Image(systemName: "arrow.down")
+                    .font(.caption2)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    // MARK: - Input Bar
 
     private var inputBar: some View {
         HStack(spacing: 10) {
@@ -173,6 +198,8 @@ struct TerminalView: View {
         .padding(.bottom, 4)
     }
 
+    // MARK: - Empty State
+
     private var emptyState: some View {
         ContentUnavailableView {
             Label(String(localized: "等待输出"), systemImage: "terminal")
@@ -180,6 +207,8 @@ struct TerminalView: View {
             Text(String(localized: "Claude Code 的实时输出和对话会显示在这里"))
         }
     }
+
+    // MARK: - Helpers
 
     private func sendMessage() {
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -195,17 +224,5 @@ struct TerminalView: View {
         if text.hasPrefix(">") { return .blue }
         if text.hasPrefix("[") { return .teal }
         return .primary
-    }
-}
-
-private struct FeedItem: Identifiable {
-    let id: String
-    let time: Date
-    let kind: Kind
-
-    enum Kind {
-        case terminal(String)
-        case user(String)
-        case claude(String)
     }
 }
