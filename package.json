@@ -8,18 +8,10 @@
   ],
   "scripts": {
     "dev:cli": "npm run dev -w sentinel-cli",
-    "dev:server": "npm run dev -w sentinel-server",
     "build": "npm run build --workspaces --if-present",
     "build:cli": "npm run build -w sentinel-cli",
-    "build:server": "npm run build -w sentinel-server",
     "test": "npm run test --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules",
-    "docker:up": "docker-compose up -d",
-    "docker:down": "docker-compose down",
-    "docker:logs": "docker-compose logs -f",
-    "prisma:migrate": "npm run prisma:migrate -w sentinel-server",
-    "prisma:studio": "npm run prisma:studio -w sentinel-server"
+    "clean": "npm run clean --workspaces --if-present && rm -rf node_modules"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

@@ -3,3 +3,14 @@ dist/
 .env
 *.local
 .DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad
+xcuserdata/
+
+# macOS
+.Spotlight-V100
+.Trashes

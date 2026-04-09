@@ -18,25 +18,25 @@ Claude Code ──hooks──→ sentinel-cli ──TCP/WS──→ iOS App (Swi
 |-------|-----------|
 | iOS App | Swift 5.9 + SwiftUI + iOS 17+ |
 | CLI | Node.js 20 + TypeScript |
-| Server | Fastify + Socket.IO + PGlite |
 | LAN | TCP + Bonjour/mDNS |
 
 ## Structure
 
 ```
 Sentinel/              # SwiftUI iOS App
-  Views/               # 10 screens
-  Models/              # ApprovalRequest, ActivityItem, ConnectionMode, Rule
-  Network/             # ApprovalStore, RelayService, LocalDiscoveryService, SocketClient
+  Views/               # TerminalView, HistoryView, SettingsView, etc.
+  Models/              # ApprovalRequest, ActivityItem, TimelineEntry, etc.
+  Network/             # ApprovalStore, RelayService
   Transport/           # LocalTransport, ServerTransport, CloudKitTransport
-  Services/            # PairingService, BiometricService, NotificationService
+  Services/            # BiometricService, TrustManager, SuggestionEngine, etc.
   Crypto/              # IdentityManager, TransportEncryption
-  Components/          # ToolIcon, RiskBadge, CountdownRing, TerminalLine
-  Helpers/             # KeychainHelper
+  Components/          # InlineApprovalCard, InlineSummaryCard, DiffView, etc.
+  Helpers/             # ApprovalHelper, SharedStateWriter, SentinelConfig
+
+SentinelWidget/        # iOS Widget Extension
 
 packages/
   sentinel-cli/        # Mac CLI (17+ commands)
-  sentinel-server/     # Relay server (optional)
 ```
 
 ## Rules
