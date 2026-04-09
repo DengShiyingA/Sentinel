@@ -1,113 +1,78 @@
 import SwiftUI
 
-struct ApprovalListView: View {
+struct HistoryView: View {
     @Environment(ApprovalStore.self) private var store
-    @Environment(RelayService.self) private var relay
+    @State private var searchText = ""
 
     var body: some View {
         NavigationStack {
             Group {
-                if store.pendingRequests.isEmpty {
+                if filteredHistory.isEmpty {
                     emptyState
                 } else {
-                    requestList
+                    historyList
                 }
             }
-            .navigationTitle(String(localized: "审批"))
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(relay.isConnected ? .green : .red)
-                            .frame(width: 8, height: 8)
-                        Text(relay.isConnected ? String(localized: "已连接") : String(localized: "未连接"))
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
-            .overlay(alignment: .top) {
-                if let toast = store.syncToast {
-                    Text(toast)
-                        .font(.subheadline.weight(.medium))
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .padding(.top, 8)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                        .animation(.spring(duration: 0.3), value: store.syncToast)
-                }
-            }
+            .navigationTitle(String(localized: "历史"))
+            .searchable(text: $searchText, prompt: String(localized: "搜索工具名或路径"))
         }
     }
 
-    private var requestList: some View {
-        List {
-            ForEach(store.pendingRequests) { request in
-                NavigationLink(value: request.id) {
-                    ApprovalRow(request: request)
-                }
-                .swipeActions(edge: .trailing) {
-                    Button(String(localized: "允许")) {
-                        store.sendDecision(requestId: request.id, decision: .allowed)
+    private var filteredHistory: [DecisionRecord] {
+        if searchText.isEmpty { return store.decisionHistory }
+        let query = searchText.lowercased()
+        return store.decisionHistory.filter { record in
+            record.request.toolName.lowercased().contains(query)
+            || (record.request.toolInput["file_path"]?.description ?? "").lowercased().contains(query)
+            || (record.request.toolInput["command"]?.description ?? "").lowercased().contains(query)
+        }
+    }
+
+    private var historyList: some View {
+        List(filteredHistory) { record in
+            HStack(spacing: 12) {
+                Image(systemName: record.decision == .allowed
+                      ? "checkmark.circle.fill" : "xmark.circle.fill")
+                    .foregroundStyle(record.decision == .allowed ? .green : .red)
+                    .font(.title3)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(record.request.toolName)
+                        .font(.headline)
+                    if let path = record.request.toolInput["file_path"]?.description
+                        ?? record.request.toolInput["command"]?.description {
+                        Text(path)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    .tint(.green)
                 }
-                .swipeActions(edge: .leading) {
-                    Button(String(localized: "拒绝")) {
-                        store.sendDecision(requestId: request.id, decision: .blocked)
-                    }
-                    .tint(.red)
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    RiskBadge(riskLevel: record.request.riskLevel)
+                    Text(record.decidedAt, format: .dateTime.hour().minute().second())
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
             }
+            .padding(.vertical, 4)
         }
         .listStyle(.insetGrouped)
-        .navigationDestination(for: String.self) { requestId in
-            if let request = store.request(for: requestId) {
-                ApprovalDetailView(request: request)
-            }
-        }
     }
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label(String(localized: "没有待审批的请求"), systemImage: "checkmark.shield")
+            Label(String(localized: "暂无历史记录"), systemImage: "clock")
         } description: {
-            Text(String(localized: "当 Claude Code 需要执行工具时，审批请求会出现在这里"))
+            Text(String(localized: "审批决策记录会显示在这里"))
         }
     }
 }
 
-struct ApprovalRow: View {
-    let request: ApprovalRequest
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ToolIcon(toolName: request.toolName)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(request.toolName)
-                    .font(.headline)
-                if let path = request.toolInput["file_path"]?.description
-                    ?? request.toolInput["command"]?.description {
-                    Text(path)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                }
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 4) {
-                RiskBadge(riskLevel: request.riskLevel)
-                CountdownText(timeoutAt: request.timeoutAt)
-            }
-        }
-        .padding(.vertical, 4)
-    }
-}
+// MARK: - Countdown (kept for potential reuse)
 
 struct CountdownText: View {
     let timeoutAt: Date
