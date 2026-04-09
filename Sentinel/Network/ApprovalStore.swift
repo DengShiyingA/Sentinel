@@ -237,11 +237,14 @@ final class ApprovalStore {
             self.rebuildTimeline()
             log.info("New request: \(request.id) tool=\(request.toolName)")
 
-            NotificationService.shared.postApprovalNotification(
-                requestId: request.id,
-                toolName: request.toolName,
-                riskLevel: request.riskLevel
-            )
+            // Only push notification for high-risk (Face ID) requests
+            if request.riskLevel == .requireFaceID {
+                NotificationService.shared.postApprovalNotification(
+                    requestId: request.id,
+                    toolName: request.toolName,
+                    riskLevel: request.riskLevel
+                )
+            }
 
             self.scheduleTimeout(for: request)
         }
