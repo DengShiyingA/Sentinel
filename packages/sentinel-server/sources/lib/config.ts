@@ -20,6 +20,10 @@ const envSchema = z.object({
   APNS_TOPIC: z.string().default('com.sentinel.ios'),
   APNS_PRODUCTION: z.coerce.boolean().default(false),
 
+  // TLS (optional — enables HTTPS/WSS)
+  TLS_CERT_PATH: z.string().optional(),
+  TLS_KEY_PATH: z.string().optional(),
+
   // Timeouts
   APPROVAL_TIMEOUT_S: z.coerce.number().default(120),
   PAIR_SECRET_TTL_S: z.coerce.number().default(300), // 5 min

@@ -1,6 +1,8 @@
 import net from 'net';
 import { randomBytes } from 'crypto';
 import { spawn as cpSpawn } from 'child_process';
+import nacl from 'tweetnacl';
+import { encodeBase64 } from 'tweetnacl-util';
 import { Bonjour } from 'bonjour-service';
 import type { Transport, ApprovalPayload } from './interface';
 import { pending } from '../relay/pending';
@@ -28,9 +30,11 @@ export class LocalTransport implements Transport {
   private bonjour: Bonjour | null = null;
   private iosSocket: net.Socket | null = null;
   private buffer = '';
+  private static readonly MAX_BUFFER_SIZE = 1_048_576; // 1 MB
   private decisionCb: ((id: string, action: 'allowed' | 'blocked' | 'timeout') => void) | null = null;
   private rulesUpdateCb: ((rules: Rule[]) => void) | null = null;
   private userMessageCb: ((text: string) => void) | null = null;
+  private activeClaudeProcess: import('child_process').ChildProcess | null = null;
 
   get isConnected(): boolean {
     return this.iosSocket !== null && !this.iosSocket.destroyed;
@@ -49,20 +53,42 @@ export class LocalTransport implements Transport {
         this.buffer = '';
         log.success(`[local] iOS connected from ${socket.remoteAddress}`);
 
-        // Send plaintext handshake with encryption key
+        // Send handshake with X25519 ephemeral public key for key agreement.
+        // The transport key is derived: HMAC-SHA256(sharedSecret, "sentinel-transport-v2").
+        // This replaces sending the raw symmetric key in plaintext.
+        const ephemeral = nacl.box.keyPair();
         const handshake = JSON.stringify({
           event: 'handshake',
-          data: { version: '2', ek: getTransportKeyBase64() },
+          data: {
+            version: '3',
+            x25519PublicKey: encodeBase64(ephemeral.publicKey),
+            // Still include ek for backward compatibility with older iOS versions
+            ek: getTransportKeyBase64(),
+          },
         }) + '\n';
         socket.write(handshake);
 
+        // Store ephemeral secret key for this connection to derive shared key
+        // when iOS responds with its public key
+        (socket as any)._ephemeralSecretKey = ephemeral.secretKey;
+
         socket.on('data', (chunk) => {
           this.buffer += chunk.toString();
+          if (this.buffer.length > LocalTransport.MAX_BUFFER_SIZE) {
+            log.error('[local] Buffer exceeded 1MB, dropping connection');
+            this.buffer = '';
+            socket.destroy();
+            return;
+          }
           this.processBuffer();
         });
 
         socket.on('close', () => {
           log.warn('[local] iOS disconnected');
+          // Clear ephemeral key material
+          if ((socket as any)._ephemeralSecretKey) {
+            (socket as any)._ephemeralSecretKey = null;
+          }
           if (this.iosSocket === socket) this.iosSocket = null;
         });
 
@@ -168,10 +194,16 @@ export class LocalTransport implements Transport {
     this.send('terminal', { type: 'terminal', text: `> ${message}` });
     this.sendEvent({ type: 'claude_status', status: 'thinking', message });
 
+    // Kill any previous Claude process before starting a new one
+    if (this.activeClaudeProcess && !this.activeClaudeProcess.killed) {
+      this.activeClaudeProcess.kill('SIGTERM');
+    }
+
     const child = cpSpawn('claude', ['--continue', '--print', message], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     });
+    this.activeClaudeProcess = child;
 
     let output = '';
     let lineBuffer = '';
@@ -262,6 +294,10 @@ export class LocalTransport implements Transport {
   }
 
   stop(): void {
+    if (this.activeClaudeProcess && !this.activeClaudeProcess.killed) {
+      this.activeClaudeProcess.kill('SIGTERM');
+      this.activeClaudeProcess = null;
+    }
     this.iosSocket?.destroy();
     this.iosSocket = null;
     this.server?.close();

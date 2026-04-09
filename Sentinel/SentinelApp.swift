@@ -10,6 +10,7 @@ struct SentinelApp: App {
     @State private var local: LocalDiscoveryService
     @State private var relay: RelayService
     @State private var store: ApprovalStore
+    @State private var trustManager = TrustManager()
 
     init() {
         let p = PairingService()
@@ -35,13 +36,14 @@ struct SentinelApp: App {
                 .environment(local)
                 .environment(relay)
                 .environment(store)
+                .environment(trustManager)
                 .onAppear {
-                    // Delay slightly to let SwiftUI finish layout first
+                    store.trustManager = trustManager
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                         relay.connectCurrentMode()
                     }
-                    NotificationService.shared.onNotificationAction = { [store] id, decision in
-                        store.sendDecision(requestId: id, decision: decision)
+                    NotificationService.shared.onNotificationAction = { [weak store] id, decision in
+                        store?.sendDecision(requestId: id, decision: decision)
                     }
                 }
         }

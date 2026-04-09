@@ -7,10 +7,11 @@ private let log = Logger(subsystem: "com.sentinel.ios", category: "RelayService"
 final class RelayService {
     private(set) var currentMode: ConnectionMode
     private(set) var isConnected = false
-    private(set) var connectionError: String?
+    var connectionError: String?
 
     private var transport: TransportProtocol?
     private var connectTask: Task<Void, Never>?
+    private var heartbeatTask: Task<Void, Never>?
 
     private let socket: SocketClient
     private let local: LocalDiscoveryService
@@ -33,15 +34,29 @@ final class RelayService {
     }
 
     func switchMode(_ mode: ConnectionMode) {
-        // Cancel any pending connect
+        // Cancel any pending connect and wait for teardown
         connectTask?.cancel()
+        connectTask = nil
 
-        // Tear down old
-        transport?.onRequest = nil
-        transport?.disconnect()
+        // Tear down old — clear callbacks first to prevent stale events
+        let oldTransport = transport
+        oldTransport?.onRequest = nil
+        oldTransport?.onActivity = nil
+        oldTransport?.onDecisionSync = nil
+        oldTransport?.onTerminal = nil
+        oldTransport?.disconnect()
         transport = nil
         isConnected = false
         connectionError = nil
+
+        // Validate: server mode requires pairing
+        if mode == .server && !pairing.isPaired {
+            connectionError = String(localized: "请先配对服务器")
+            currentMode = mode
+            ConnectionMode.current = mode
+            log.warning("Server mode requires pairing — not connected")
+            return
+        }
 
         // Update mode
         currentMode = mode
@@ -66,13 +81,16 @@ final class RelayService {
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     group.addTask { try await newTransport.connect() }
                     group.addTask {
-                        try await Task.sleep(for: .seconds(10))
+                        try await Task.sleep(for: .seconds(SentinelConfig.connectTimeoutSeconds))
                         throw CancellationError()
                     }
                     try await group.next()
                     group.cancelAll()
                 }
-                await MainActor.run { self?.isConnected = true }
+                await MainActor.run {
+                    self?.isConnected = true
+                    self?.startHeartbeat()
+                }
                 log.info("Connected via \(mode.rawValue)")
             } catch is CancellationError {
                 log.warning("Connect timeout (\(mode.rawValue))")
@@ -116,16 +134,51 @@ final class RelayService {
 
     func disconnect() {
         connectTask?.cancel()
+        heartbeatTask?.cancel()
+        heartbeatTask = nil
         transport?.disconnect()
         isConnected = false
         connectionError = nil
         log.info("Disconnected")
     }
 
+    /// Periodically check if the transport is still alive.
+    /// If the underlying connection drops without notification (zombie state),
+    /// update isConnected so the UI reflects reality.
+    private func startHeartbeat() {
+        heartbeatTask?.cancel()
+        heartbeatTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard !Task.isCancelled, let self else { return }
+                let transportAlive = self.transport?.isConnected ?? false
+                if self.isConnected && !transportAlive {
+                    await MainActor.run {
+                        self.isConnected = false
+                        self.connectionError = String(localized: "连接已断开")
+                        log.warning("Heartbeat: transport dead, marking disconnected")
+                    }
+                    return
+                }
+            }
+        }
+    }
+
     func sendDecision(requestId: String, decision: Decision) {
-        guard let transport else { return }
+        guard let transport else {
+            Task { @MainActor in
+                ErrorBus.shared.post("无法发送决策：未连接", source: "relay", recovery: "请检查连接状态")
+            }
+            return
+        }
         Task {
-            try? await transport.sendDecision(requestId: requestId, decision: decision)
+            do {
+                try await transport.sendDecision(requestId: requestId, decision: decision)
+            } catch {
+                await MainActor.run {
+                    ErrorBus.shared.post("发送决策失败：\(error.localizedDescription)", source: "relay")
+                }
+            }
         }
     }
 
@@ -133,5 +186,19 @@ final class RelayService {
         guard let local = local as? LocalDiscoveryService else { return }
         local.emit("user_message", dict: ["text": text])
         log.info("User message sent: \(text.prefix(50))")
+    }
+
+    func sendRulesUpdate(rules: [[String: Any]]) {
+        guard let transport else { return }
+        Task {
+            do {
+                try await transport.sendRulesUpdate(rules: rules)
+                log.info("Rules synced to Mac (\(rules.count) rules)")
+            } catch {
+                await MainActor.run {
+                    ErrorBus.shared.post("规则同步失败：\(error.localizedDescription)", source: "relay")
+                }
+            }
+        }
     }
 }

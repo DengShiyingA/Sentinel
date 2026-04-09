@@ -1,29 +1,15 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { randomBytes } from 'crypto';
-import { findDeviceById, updateDevicePairing, healthCheck } from '../db/client';
+import { findDeviceById, healthCheck, createPairSecret, findPairSecret, cleanExpiredPairSecrets, pairDevicesTransaction } from '../db/client';
 import { verifyJwt } from '../auth/challenge';
 import { config } from '../lib/config';
 import { logger } from '../lib/logger';
 
-// ==================== 内存存储配对 secret ====================
-
-interface PairSecret {
-  secret: string;
-  macDeviceId: string;
-  createdAt: number;
-}
-
-const pairSecrets = new Map<string, PairSecret>();
-
+// Clean expired secrets periodically
 setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of pairSecrets) {
-    if (now - entry.createdAt > config.PAIR_SECRET_TTL_S * 1000) {
-      pairSecrets.delete(key);
-    }
-  }
-}, 30_000);
+  cleanExpiredPairSecrets().catch((err) => logger.error({ err }, 'Failed to clean expired pair secrets'));
+}, 60_000);
 
 // ==================== Zod ====================
 
@@ -53,7 +39,7 @@ export async function pairRoutes(app: FastifyInstance): Promise<void> {
     const secretBytes = randomBytes(32);
     const secretBase64Url = secretBytes.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-    pairSecrets.set(secretBase64Url, { secret: secretBase64Url, macDeviceId: jwt.deviceId, createdAt: Date.now() });
+    await createPairSecret(secretBase64Url, jwt.deviceId, config.PAIR_SECRET_TTL_S);
 
     logger.info({ macDeviceId: jwt.deviceId }, 'Pair link generated');
     return reply.send({ success: true, data: { link: `sentinel://pair/${secretBase64Url}`, expiresIn: config.PAIR_SECRET_TTL_S } });
@@ -72,22 +58,15 @@ export async function pairRoutes(app: FastifyInstance): Promise<void> {
     if (!jwt) return reply.status(401).send({ success: false, error: { code: 'AUTH_FAILED', message: 'Invalid token' } });
     if (jwt.type !== 'ios') return reply.status(403).send({ success: false, error: { code: 'FORBIDDEN', message: 'iOS only' } });
 
-    const entry = pairSecrets.get(secret);
+    const entry = await findPairSecret(secret);
     if (!entry) return reply.status(404).send({ success: false, error: { code: 'PAIR_EXPIRED', message: 'Pair link expired or invalid' } });
-
-    if (Date.now() - entry.createdAt > config.PAIR_SECRET_TTL_S * 1000) {
-      pairSecrets.delete(secret);
-      return reply.status(410).send({ success: false, error: { code: 'PAIR_EXPIRED', message: 'Pair link expired' } });
-    }
 
     const macDeviceId = entry.macDeviceId;
     const iosDeviceId = jwt.deviceId;
 
     try {
-      await updateDevicePairing(macDeviceId, iosDeviceId);
-      await updateDevicePairing(iosDeviceId, macDeviceId, apnsToken);
-
-      pairSecrets.delete(secret);
+      // Atomic: both pairing updates + secret deletion in one transaction
+      await pairDevicesTransaction(macDeviceId, iosDeviceId, secret, apnsToken);
 
       const macDevice = await findDeviceById(macDeviceId);
 

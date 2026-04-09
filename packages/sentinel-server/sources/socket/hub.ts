@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import type { FastifyInstance } from 'fastify';
 import { verifyJwt, type JwtPayload } from '../auth/challenge';
+import { isTokenRevoked, findDeviceById } from '../db/client';
 import { logger } from '../lib/logger';
 import { config } from '../lib/config';
 import { registerApprovalHandlers } from './handlers/approvalHandler';
@@ -11,6 +12,7 @@ export interface ConnectedDevice {
   deviceId: string;
   type: string;
   publicKey: string;
+  pairedWithId: string | null;
   socket: Socket;
   connectedAt: number;
 }
@@ -60,7 +62,7 @@ export function initSocketHub(app: FastifyInstance): Server {
 
   // ==================== JWT 认证中间件 ====================
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token as string | undefined;
     if (!token) {
       return next(new Error('Missing auth token'));
@@ -69,6 +71,13 @@ export function initSocketHub(app: FastifyInstance): Server {
     const payload = verifyJwt(token);
     if (!payload) {
       return next(new Error('Invalid or expired token'));
+    }
+
+    // Check if token has been revoked
+    const revoked = await isTokenRevoked(payload.deviceId);
+    if (revoked) {
+      logger.warn({ deviceId: payload.deviceId }, 'Connection rejected: token revoked');
+      return next(new Error('Token has been revoked'));
     }
 
     // 注入到 socket.data
@@ -81,7 +90,7 @@ export function initSocketHub(app: FastifyInstance): Server {
 
   // ==================== Connection ====================
 
-  io.on('connection', (socket) => {
+  io.on('connection', async (socket) => {
     const { deviceId, type, publicKey } = socket.data as JwtPayload;
 
     // 踢掉同设备旧连接
@@ -91,15 +100,26 @@ export function initSocketHub(app: FastifyInstance): Server {
       existing.socket.disconnect(true);
     }
 
+    // Load pairedWithId from DB so we can filter broadcasts correctly
+    let pairedWithId: string | null = null;
+    try {
+      const dbDevice = await findDeviceById(deviceId);
+      pairedWithId = dbDevice?.pairedWithId ?? null;
+      socket.data.pairedWithId = pairedWithId;
+    } catch (err) {
+      logger.error({ err, deviceId }, 'Failed to load device pairing info');
+    }
+
     devices.set(deviceId, {
       deviceId,
       type,
       publicKey,
+      pairedWithId,
       socket,
       connectedAt: Date.now(),
     });
 
-    logger.info({ deviceId, type, socketId: socket.id }, 'Device connected');
+    logger.info({ deviceId, type, pairedWithId, socketId: socket.id }, 'Device connected');
 
     // 注册事件处理器
     registerApprovalHandlers(socket);
@@ -134,11 +154,8 @@ export function broadcastToIosDevices(
   for (const [deviceId, device] of devices) {
     if (device.type !== 'ios') continue;
     if (deviceId === excludeDeviceId) continue;
-    // Check if this iOS device is paired with the Mac
-    // We store pairedWithId on the device, so we check socket.data
-    // But we don't have pairedWithId in socket.data — we rely on the caller
-    // to have verified the relationship. For now, broadcast to all iOS devices
-    // that are online (the server is single-user MVP).
+    // Only send to iOS devices that are paired with this Mac
+    if (device.pairedWithId !== macDeviceId) continue;
     device.socket.emit(event, payload);
     sent++;
   }

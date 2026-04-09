@@ -24,6 +24,9 @@ const HookPayloadSchema = z.object({
 
 const PENDING_MSG_PATH = join(getSentinelDir(), 'pending_message.txt');
 
+// SSE access token — generated at startup, required for /events and /terminal
+const SSE_TOKEN = randomBytes(16).toString('hex');
+
 // SSE clients
 const sseClients = new Set<express.Response>();
 
@@ -56,7 +59,7 @@ function sendActivity(type: string, data: Record<string, unknown>): void {
 
 export function createHttpServer(port: number = 7749): express.Application {
   const app = express();
-  app.use(express.json({ limit: '1mb' }));
+  app.use(express.json({ limit: '512kb' }));
 
   // ==================== PreToolUse hook ====================
   app.post('/hook', async (req, res) => {
@@ -268,8 +271,19 @@ export function createHttpServer(port: number = 7749): express.Application {
     res.json({ success: true });
   });
 
+  // ==================== SSE Auth Middleware ====================
+  function requireSseToken(req: express.Request, res: express.Response): boolean {
+    const token = req.query.token as string | undefined;
+    if (token !== SSE_TOKEN) {
+      res.status(401).json({ error: 'Invalid or missing SSE token' });
+      return false;
+    }
+    return true;
+  }
+
   // ==================== Terminal SSE ====================
-  app.get('/terminal', (_req, res) => {
+  app.get('/terminal', (req, res) => {
+    if (!requireSseToken(req, res)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -279,13 +293,20 @@ export function createHttpServer(port: number = 7749): express.Application {
   });
 
   // ==================== SSE ====================
-  app.get('/events', (_req, res) => {
+  app.get('/events', (req, res) => {
+    if (!requireSseToken(req, res)) return;
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
     sseClients.add(res);
     res.on('close', () => sseClients.delete(res));
+  });
+
+  // ==================== SSE Token (for CLI watch command) ====================
+  app.get('/sse-token', (_req, res) => {
+    // Only accessible from localhost
+    res.json({ token: SSE_TOKEN });
   });
 
   // ==================== Status ====================

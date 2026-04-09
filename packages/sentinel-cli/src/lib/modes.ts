@@ -35,7 +35,7 @@ export function getMode(): PermissionMode {
 }
 
 export function setMode(mode: PermissionMode): void {
-  writeFileSync(MODES_PATH, JSON.stringify({ mode, changedAt: new Date().toISOString() }, null, 2));
+  writeFileSync(MODES_PATH, JSON.stringify({ mode, changedAt: new Date().toISOString() }, null, 2), { mode: 0o600 });
 }
 
 export function getModeInfo(): ModeConfig {

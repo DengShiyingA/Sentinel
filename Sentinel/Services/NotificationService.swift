@@ -10,6 +10,10 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     /// Callback: (requestId, decision) — set by ApprovalStore to handle lock-screen actions
     var onNotificationAction: ((String, Decision) -> Void)?
 
+    /// Whether notifications are enabled. UI can observe this to show warnings.
+    private(set) var isPermissionGranted = false
+    private(set) var permissionChecked = false
+
     private override init() {
         super.init()
     }
@@ -20,6 +24,17 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
         registerCategories()
         requestPermission()
+    }
+
+    /// Re-check current permission status (call when app becomes active)
+    func refreshPermissionStatus() {
+        Task {
+            let settings = await UNUserNotificationCenter.current().notificationSettings()
+            await MainActor.run {
+                self.isPermissionGranted = settings.authorizationStatus == .authorized
+                self.permissionChecked = true
+            }
+        }
     }
 
     private func registerCategories() {
@@ -49,16 +64,23 @@ final class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             do {
                 let granted = try await UNUserNotificationCenter.current()
                     .requestAuthorization(options: [.alert, .sound, .badge])
+                await MainActor.run {
+                    self.isPermissionGranted = granted
+                    self.permissionChecked = true
+                }
                 if granted {
                     await MainActor.run {
                         UIApplication.shared.registerForRemoteNotifications()
                     }
                     log.info("Notification permission granted")
                 } else {
-                    log.info("Notification permission denied")
+                    log.warning("Notification permission denied — approvals will only appear in-app")
                 }
             } catch {
                 log.error("Notification permission error: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.permissionChecked = true
+                }
             }
         }
     }

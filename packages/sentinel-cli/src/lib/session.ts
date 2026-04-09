@@ -52,7 +52,7 @@ export function endSession(): void {
 
   // Save to file
   const path = join(SESSIONS_DIR, `${currentSession.id}.json`);
-  writeFileSync(path, JSON.stringify(currentSession, null, 2));
+  writeFileSync(path, JSON.stringify(currentSession, null, 2), { mode: 0o600 });
   currentSession = null;
 }
 

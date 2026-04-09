@@ -109,11 +109,10 @@ export function daemonStop(): void {
 
   try {
     process.kill(pid, 'SIGTERM');
-    // Wait briefly for graceful shutdown
-    let tries = 0;
-    while (tries < 10 && isProcessRunning(pid)) {
-      require('child_process').execSync('sleep 0.2');
-      tries++;
+    // Wait briefly for graceful shutdown using busy-wait with Atomics
+    const start = Date.now();
+    while (Date.now() - start < 2000 && isProcessRunning(pid)) {
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
     }
     if (isProcessRunning(pid)) process.kill(pid, 'SIGKILL');
     log.success(`Daemon stopped (PID: ${pid})`);

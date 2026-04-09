@@ -5,32 +5,51 @@ import { getTodayStats } from './history';
 
 const BUDGET_PATH = join(getSentinelDir(), 'budget.json');
 
-// Claude Sonnet pricing
-const INPUT_COST_PER_M = 3.0;   // $3 / 1M input tokens
-const OUTPUT_COST_PER_M = 15.0;  // $15 / 1M output tokens
-// Rough estimate: each tool call ~500 input + 200 output tokens
-const EST_INPUT_TOKENS = 500;
-const EST_OUTPUT_TOKENS = 200;
-const EST_COST_PER_CALL =
-  (EST_INPUT_TOKENS / 1_000_000) * INPUT_COST_PER_M +
-  (EST_OUTPUT_TOKENS / 1_000_000) * OUTPUT_COST_PER_M;
+// Per-tool cost estimation (input + output tokens)
+// Based on typical Claude Sonnet usage patterns
+const TOOL_COST_ESTIMATES: Record<string, { input: number; output: number }> = {
+  Bash:  { input: 800, output: 500 },   // commands + output
+  Write: { input: 600, output: 300 },   // file content
+  Edit:  { input: 500, output: 200 },   // partial edits
+  Read:  { input: 200, output: 800 },   // small request, large file
+  Glob:  { input: 200, output: 300 },
+  Grep:  { input: 300, output: 400 },
+};
+const DEFAULT_TOOL_ESTIMATE = { input: 500, output: 200 };
 
+// Configurable pricing — defaults to Claude Sonnet
 interface BudgetConfig {
   dailyLimit: number;  // USD
   currency: string;
+  inputCostPerM: number;   // $ per 1M input tokens
+  outputCostPerM: number;  // $ per 1M output tokens
 }
 
+function estimateCost(toolName: string, config: BudgetConfig): number {
+  const est = TOOL_COST_ESTIMATES[toolName] ?? DEFAULT_TOOL_ESTIMATE;
+  return (est.input / 1_000_000) * config.inputCostPerM +
+         (est.output / 1_000_000) * config.outputCostPerM;
+}
+
+const DEFAULT_CONFIG: BudgetConfig = {
+  dailyLimit: 5.0,
+  currency: 'USD',
+  inputCostPerM: 3.0,    // Claude Sonnet
+  outputCostPerM: 15.0,  // Claude Sonnet
+};
+
 function loadBudget(): BudgetConfig {
-  if (!existsSync(BUDGET_PATH)) return { dailyLimit: 5.0, currency: 'USD' };
+  if (!existsSync(BUDGET_PATH)) return { ...DEFAULT_CONFIG };
   try {
-    return JSON.parse(readFileSync(BUDGET_PATH, 'utf-8'));
+    const saved = JSON.parse(readFileSync(BUDGET_PATH, 'utf-8'));
+    return { ...DEFAULT_CONFIG, ...saved };
   } catch {
-    return { dailyLimit: 5.0, currency: 'USD' };
+    return { ...DEFAULT_CONFIG };
   }
 }
 
 function saveBudget(config: BudgetConfig): void {
-  writeFileSync(BUDGET_PATH, JSON.stringify(config, null, 2));
+  writeFileSync(BUDGET_PATH, JSON.stringify(config, null, 2), { mode: 0o600 });
 }
 
 export function setBudgetLimit(amount: number): void {
@@ -45,9 +64,17 @@ export function getBudgetLimit(): number {
 
 export function getTodaySpend(): number {
   const stats = getTodayStats();
-  // Count all calls that went through (allowed + auto_allow)
+  const config = loadBudget();
+  // Use a weighted average estimate per call
+  const avgCost = estimateCost('_average', config);
   const calls = stats.allowed + stats.autoAllow;
-  return calls * EST_COST_PER_CALL;
+  return calls * avgCost;
+}
+
+/** Estimate cost for a specific tool call */
+export function estimateToolCost(toolName: string): number {
+  const config = loadBudget();
+  return estimateCost(toolName, config);
 }
 
 export function isOverBudget(): boolean {

@@ -21,7 +21,7 @@ function loadOverrides(): Overrides {
 }
 
 function saveOverrides(o: Overrides): void {
-  writeFileSync(OVERRIDES_PATH, JSON.stringify(o, null, 2));
+  writeFileSync(OVERRIDES_PATH, JSON.stringify(o, null, 2), { mode: 0o600 });
 }
 
 function isExpired(until: string | null): boolean {

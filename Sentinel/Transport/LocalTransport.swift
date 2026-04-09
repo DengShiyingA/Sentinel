@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import OSLog
 
 private let log = Logger(subsystem: "com.sentinel.ios", category: "LocalTransport")
@@ -34,6 +35,10 @@ final class LocalTransport: TransportProtocol {
         ])
     }
 
+    func sendRulesUpdate(rules: [[String: Any]]) async throws {
+        discovery.emit("rules_update", dict: ["rules": rules])
+    }
+
     /// Re-set discovery.onEvent every time a callback changes,
     /// so closures always reference the latest callbacks.
     private func rebindListener() {
@@ -45,10 +50,37 @@ final class LocalTransport: TransportProtocol {
         discovery.onEvent = { event, data in
             switch event {
             case "handshake":
-                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let ek = dict["ek"] as? String {
-                    TransportEncryption.setKey(base64: ek)
-                    log.info("Encryption key received")
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let version = dict["version"] as? String ?? "2"
+                    if version == "3", let x25519PubB64 = dict["x25519PublicKey"] as? String,
+                       let pubKeyData = Data(base64Encoded: x25519PubB64),
+                       pubKeyData.count == 32 {
+                        // V3: derive shared key via X25519 ECDH (no plaintext key exchange)
+                        do {
+                            let serverPubKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: pubKeyData)
+                            let ephemeral = Curve25519.KeyAgreement.PrivateKey()
+                            let shared = try ephemeral.sharedSecretFromKeyAgreement(with: serverPubKey)
+                            let derivedKey = shared.hkdfDerivedSymmetricKey(
+                                using: SHA256.self,
+                                salt: Data("sentinel-transport-v2".utf8),
+                                sharedInfo: Data(),
+                                outputByteCount: 32
+                            )
+                            TransportEncryption.setDerivedKey(derivedKey)
+                            log.info("Encryption key derived via X25519 ECDH (v3)")
+                        } catch {
+                            log.error("X25519 key agreement failed: \(error)")
+                            // Fall back to v2 ek if available
+                            if let ek = dict["ek"] as? String {
+                                TransportEncryption.setKey(base64: ek)
+                                log.info("Fell back to v2 plaintext key")
+                            }
+                        }
+                    } else if let ek = dict["ek"] as? String {
+                        // V2 fallback: plaintext key
+                        TransportEncryption.setKey(base64: ek)
+                        log.info("Encryption key received (v2 plaintext)")
+                    }
                 }
 
             case "approval_request":

@@ -1,14 +1,16 @@
 import { Socket } from 'socket.io';
 import { z } from 'zod';
 import { createId } from '@paralleldrive/cuid2';
-import { findDeviceById, createApproval, resolveApproval, findApprovalById } from '../../db/client';
+import { findDeviceById, createApproval, resolveApproval, findApprovalById, appendAuditLog } from '../../db/client';
 import { relay, broadcastToIosDevices } from '../hub';
 import { sendApprovalPush } from '../../apns/sender';
 import { config } from '../../lib/config';
 import { logger } from '../../lib/logger';
 
+const MAX_TOOL_INPUT_SIZE = 512 * 1024; // 512 KB
+
 const ApprovalRequestSchema = z.object({
-  toolName: z.string().min(1),
+  toolName: z.string().min(1).max(200),
   toolInput: z.record(z.unknown()),
   riskLevel: z.enum(['low', 'medium', 'high']).default('low'),
 });
@@ -27,6 +29,12 @@ function scheduleTimeout(requestId: string, macDeviceId: string): void {
       const count = await resolveApproval(requestId, 'timeout');
       if (count > 0) {
         relay(macDeviceId, 'decision', { requestId, action: 'timeout' });
+        await appendAuditLog({
+          requestId,
+          action: 'decision_timeout',
+          deviceId: macDeviceId,
+          details: `Timed out after ${config.APPROVAL_TIMEOUT_S}s`,
+        });
         logger.info({ requestId }, 'Approval timed out → auto block');
       }
     } catch (err) {
@@ -54,6 +62,13 @@ export function registerApprovalHandlers(socket: Socket): void {
     const parsed = ApprovalRequestSchema.safeParse(data);
     if (!parsed.success) {
       ack?.({ success: false, error: parsed.error.message });
+      return;
+    }
+
+    // Validate toolInput size to prevent OOM
+    const inputSize = JSON.stringify(parsed.data.toolInput).length;
+    if (inputSize > MAX_TOOL_INPUT_SIZE) {
+      ack?.({ success: false, error: `toolInput too large: ${inputSize} bytes (max ${MAX_TOOL_INPUT_SIZE})` });
       return;
     }
 
@@ -99,6 +114,15 @@ export function registerApprovalHandlers(socket: Socket): void {
 
       scheduleTimeout(approval.id, deviceId);
 
+      // Audit log: approval request created
+      await appendAuditLog({
+        requestId: approval.id,
+        action: 'approval_created',
+        deviceId,
+        toolName: approval.toolName,
+        riskLevel: approval.riskLevel,
+      });
+
       logger.info({ requestId: approval.id, toolName: approval.toolName }, 'Approval created');
       ack?.({ success: true, requestId: approval.id });
     } catch (err) {
@@ -142,6 +166,16 @@ export function registerApprovalHandlers(socket: Socket): void {
           decidedBy: deviceId,
         }, deviceId);
       }
+
+      // Audit log: decision made
+      await appendAuditLog({
+        requestId,
+        action: `decision_${action}`,
+        deviceId,
+        toolName: approval?.toolName,
+        riskLevel: approval?.riskLevel,
+        details: `Decided by device ${deviceId}`,
+      });
 
       logger.info({ requestId, action }, 'Decision recorded');
       ack?.({ success: true });

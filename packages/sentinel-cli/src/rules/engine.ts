@@ -96,21 +96,28 @@ const DEFAULT_RULES: Rule[] = [
 const RULES_PATH = join(getSentinelDir(), 'rules.json');
 
 let cachedRules: Rule[] | null = null;
+let cacheLoading = false;
 
 function loadRules(): Rule[] {
   if (cachedRules) return cachedRules;
 
-  if (!existsSync(RULES_PATH)) {
-    writeFileSync(RULES_PATH, JSON.stringify(DEFAULT_RULES, null, 2));
-    cachedRules = DEFAULT_RULES;
-    return DEFAULT_RULES;
-  }
+  // Prevent concurrent loads from overwriting each other
+  if (cacheLoading) return DEFAULT_RULES;
+  cacheLoading = true;
+
   try {
+    if (!existsSync(RULES_PATH)) {
+      writeFileSync(RULES_PATH, JSON.stringify(DEFAULT_RULES, null, 2), { mode: 0o600 });
+      cachedRules = DEFAULT_RULES;
+      return DEFAULT_RULES;
+    }
     cachedRules = JSON.parse(readFileSync(RULES_PATH, 'utf-8')) as Rule[];
     return cachedRules;
   } catch {
     cachedRules = DEFAULT_RULES;
     return DEFAULT_RULES;
+  } finally {
+    cacheLoading = false;
   }
 }
 

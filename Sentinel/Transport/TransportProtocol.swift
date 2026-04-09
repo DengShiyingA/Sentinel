@@ -12,4 +12,5 @@ protocol TransportProtocol: AnyObject {
     func connect() async throws
     func disconnect()
     func sendDecision(requestId: String, decision: Decision) async throws
+    func sendRulesUpdate(rules: [[String: Any]]) async throws
 }

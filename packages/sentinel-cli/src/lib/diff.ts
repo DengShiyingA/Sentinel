@@ -80,7 +80,8 @@ function unifiedDiff(path: string, oldText: string, newText: string): string {
   }
 
   if (maxI > maxLines) {
-    lines.push(`... (${maxI - maxLines} more lines)`);
+    const remaining = maxI - maxLines;
+    lines.push(`\n⚠ Diff truncated: ${remaining} more line${remaining > 1 ? 's' : ''} not shown. Review the full file before approving.`);
   }
 
   return lines.join('\n');

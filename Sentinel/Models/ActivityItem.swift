@@ -37,7 +37,7 @@ enum ActivityType: String, Codable {
     }
 }
 
-struct ActivityItem: Identifiable {
+struct ActivityItem: Identifiable, Codable {
     let id: String
     let type: ActivityType
     let summary: String

@@ -165,15 +165,19 @@ program.command('pair').description('配对 iOS 设备')
       const json = (await res.json()) as { success: boolean; data: { link: string; expiresIn: number } };
       if (!json.success) { log.error('Server error'); process.exit(1); }
       const { link, expiresIn } = json.data;
+      // Embed server URL in the deep link so iOS doesn't need separate URL input
+      const fullLink = `${link}?s=${encodeURIComponent(serverURL)}`;
       console.log(chalk.bold('\n  📱 Scan QR code:\n'));
-      qrcode.generate(link, { small: true }, (qr: string) => { console.log(qr); });
-      console.log(`  ${chalk.dim('Link:')} ${chalk.cyan(link)}\n`);
+      qrcode.generate(fullLink, { small: true }, (qr: string) => { console.log(qr); });
+      console.log(`  ${chalk.dim('Link:')} ${chalk.cyan(fullLink)}\n`);
       const poll = setInterval(async () => {
         try {
           const sr = await fetch(`${serverURL}/v1/pair/status?token=${encodeURIComponent(tokenData.token)}`);
           const sj = (await sr.json()) as { data: { paired: boolean; pairedDevice?: { name: string } } };
           if (sj.data?.paired) { clearInterval(poll); log.success(`Paired: ${sj.data.pairedDevice?.name ?? '?'}`); process.exit(0); }
-        } catch {}
+        } catch (err) {
+          log.dim(`Polling pair status: ${(err as Error).message}`);
+        }
       }, 2000);
       setTimeout(() => { clearInterval(poll); log.warn('Expired.'); process.exit(1); }, expiresIn * 1000);
     }

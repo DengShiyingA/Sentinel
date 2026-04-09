@@ -24,6 +24,7 @@ private struct BuiltinRule: Identifiable {
 // MARK: - Rules View
 
 struct RulesView: View {
+    @Environment(RelayService.self) private var relay
     @Environment(LocalDiscoveryService.self) private var local
 
     @State private var customRules: [CustomRule] = RulesView.loadCustomRules()
@@ -116,13 +117,13 @@ struct RulesView: View {
         syncToMac()
     }
 
-    /// Send rules_update event to CLI via local transport
+    /// Send rules_update event to CLI via the active transport (works in all modes)
     private func syncToMac() {
         let rulesData = customRules.map { rule -> [String: Any] in
             var dict: [String: Any] = [
                 "id": rule.id,
                 "risk": rule.risk,
-                "priority": 0, // custom rules have highest priority
+                "priority": 0,
                 "description": rule.description,
             ]
             if let tool = rule.toolPattern { dict["toolPattern"] = tool }
@@ -130,23 +131,26 @@ struct RulesView: View {
             return dict
         }
 
-        local.emit("rules_update", dict: ["rules": rulesData])
+        relay.sendRulesUpdate(rules: rulesData)
     }
 
     // MARK: - Persistence (UserDefaults)
 
     private static let storageKey = "sentinel.customRules"
 
+    private static let validRiskValues: Set<String> = ["auto_allow", "require_confirm", "require_faceid"]
+
     static func loadCustomRules() -> [CustomRule] {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
-              let rules = try? JSONDecoder().decode([CustomRule].self, from: data) else {
+              let rules = try? JSONDecoder.sentinelDecoder.decode([CustomRule].self, from: data) else {
             return []
         }
-        return rules
+        // Filter out rules with invalid risk values (could happen after schema change)
+        return rules.filter { validRiskValues.contains($0.risk) }
     }
 
     static func saveCustomRules(_ rules: [CustomRule]) {
-        guard let data = try? JSONEncoder().encode(rules) else { return }
+        guard let data = try? JSONEncoder.sentinelEncoder.encode(rules) else { return }
         UserDefaults.standard.set(data, forKey: storageKey)
     }
 

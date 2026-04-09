@@ -48,6 +48,26 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
+    // Validate decoded byte lengths (Ed25519: challenge=32, publicKey=32, signature=64)
+    if (challengeBytes.length !== 32) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_CHALLENGE', message: `Challenge must be 32 bytes, got ${challengeBytes.length}` },
+      });
+    }
+    if (publicKeyBytes.length !== 32) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_PUBLIC_KEY', message: `Public key must be 32 bytes, got ${publicKeyBytes.length}` },
+      });
+    }
+    if (signatureBytes.length !== 64) {
+      return reply.status(400).send({
+        success: false,
+        error: { code: 'INVALID_SIGNATURE', message: `Signature must be 64 bytes, got ${signatureBytes.length}` },
+      });
+    }
+
     const valid = nacl.sign.detached.verify(challengeBytes, signatureBytes, publicKeyBytes);
     if (!valid) {
       logger.warn({ publicKey }, 'Auth failed: invalid signature');

@@ -81,26 +81,26 @@ final class IdentityManager {
         }
     }
 
-    private var x25519Private: Curve25519.KeyAgreement.PrivateKey {
-        guard let key = _x25519Private else { fatalError("X25519 key not initialized — call initializeFromSeed first") }
+    private func requireX25519() throws -> Curve25519.KeyAgreement.PrivateKey {
+        guard let key = _x25519Private else { throw CryptoError.keyNotFound }
         return key
     }
 
-    private var ed25519Private: Curve25519.Signing.PrivateKey {
-        guard let key = _ed25519Private else { fatalError("Ed25519 key not initialized — call initializeFromSeed first") }
+    private func requireEd25519() throws -> Curve25519.Signing.PrivateKey {
+        guard let key = _ed25519Private else { throw CryptoError.keyNotFound }
         return key
     }
 
     // MARK: - Public Keys
 
     /// Ed25519 signing public key as base64 (used for auth challenge-response)
-    func publicKeyBase64() -> String {
-        ed25519Private.publicKey.rawRepresentation.base64EncodedString()
+    func publicKeyBase64() throws -> String {
+        try requireEd25519().publicKey.rawRepresentation.base64EncodedString()
     }
 
     /// X25519 key agreement public key as base64
-    func x25519PublicKeyBase64() -> String {
-        x25519Private.publicKey.rawRepresentation.base64EncodedString()
+    func x25519PublicKeyBase64() throws -> String {
+        try requireX25519().publicKey.rawRepresentation.base64EncodedString()
     }
 
     // MARK: - Auth Challenge (matches CLI's authChallenge())
@@ -114,17 +114,19 @@ final class IdentityManager {
     /// Generate auth challenge: random 32 bytes, sign with Ed25519, return all base64.
     /// Server verifies with `nacl.sign.detached.verify(challenge, signature, publicKey)`.
     func authChallenge() throws -> AuthChallenge {
+        let ed25519Key = try requireEd25519()
+
         var challengeBytes = Data(count: 32)
         let result = challengeBytes.withUnsafeMutableBytes {
             SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!)
         }
         guard result == errSecSuccess else { throw CryptoError.signatureFailed }
 
-        let signature = try ed25519Private.signature(for: challengeBytes)
+        let signature = try ed25519Key.signature(for: challengeBytes)
 
         return AuthChallenge(
             challenge: challengeBytes.base64EncodedString(),
-            publicKey: ed25519Private.publicKey.rawRepresentation.base64EncodedString(),
+            publicKey: ed25519Key.publicKey.rawRepresentation.base64EncodedString(),
             signature: signature.base64EncodedString()
         )
     }
@@ -136,7 +138,7 @@ final class IdentityManager {
             throw CryptoError.invalidPublicKey
         }
 
-        let sharedSecret = try x25519Private.sharedSecretFromKeyAgreement(with: recipientKey)
+        let sharedSecret = try requireX25519().sharedSecretFromKeyAgreement(with: recipientKey)
         let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
             using: SHA256.self,
             salt: Data("sentinel-v1".utf8),
@@ -153,7 +155,7 @@ final class IdentityManager {
             throw CryptoError.invalidPublicKey
         }
 
-        let sharedSecret = try x25519Private.sharedSecretFromKeyAgreement(with: senderKey)
+        let sharedSecret = try requireX25519().sharedSecretFromKeyAgreement(with: senderKey)
         let symmetricKey = sharedSecret.hkdfDerivedSymmetricKey(
             using: SHA256.self,
             salt: Data("sentinel-v1".utf8),
@@ -168,7 +170,7 @@ final class IdentityManager {
     // MARK: - Sign (Ed25519)
 
     func sign(_ message: Data) throws -> Data {
-        try ed25519Private.signature(for: message)
+        try requireEd25519().signature(for: message)
     }
 
     // MARK: - Reset

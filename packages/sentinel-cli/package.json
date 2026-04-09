@@ -12,6 +12,7 @@
     "dev": "tsx src/cli/index.ts",
     "start": "node dist/cli/index.js",
     "clean": "rm -rf dist node_modules",
+    "test": "npx tsx --test src/__tests__/*.test.ts",
     "lint": "tsc --noEmit",
     "prepublish": "npm run build"
   },

@@ -23,6 +23,13 @@ export class RemoteTransport implements Transport {
   }
 
   async start(): Promise<void> {
+    // Clean up previous socket to prevent duplicate listeners
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.disconnect();
+      this.socket = null;
+    }
+
     this.socket = io(this.serverURL, {
       auth: { token: this.token },
       transports: ['websocket', 'polling'],
@@ -76,6 +83,7 @@ export class RemoteTransport implements Transport {
   }
 
   stop(): void {
+    this.socket?.removeAllListeners();
     this.socket?.disconnect();
     this.socket = null;
   }

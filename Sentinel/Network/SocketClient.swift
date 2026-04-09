@@ -58,17 +58,25 @@ final class SocketClient: NSObject {
 
     /// Send a Socket.IO event: 42["event", payload]
     func emit(_ event: String, _ payload: any Encodable) {
-        guard let webSocket else { return }
+        guard let webSocket else {
+            log.warning("Emit \(event) failed: not connected")
+            return
+        }
 
         do {
             let payloadData = try JSONEncoder.sentinelEncoder.encode(payload)
-            guard let payloadString = String(data: payloadData, encoding: .utf8) else { return }
+            guard let payloadString = String(data: payloadData, encoding: .utf8) else {
+                log.error("Emit \(event): payload encoding produced non-UTF8")
+                return
+            }
 
-            // Socket.IO message format: 42["eventName",{payload}]
             let message = "42[\"\(event)\",\(payloadString)]"
             webSocket.send(.string(message)) { error in
                 if let error {
                     log.error("Emit failed for \(event): \(error.localizedDescription)")
+                    Task { @MainActor in
+                        ErrorBus.shared.post("消息发送失败：\(event)", source: "socket")
+                    }
                 }
             }
             log.debug("Emit: \(event)")
@@ -79,14 +87,23 @@ final class SocketClient: NSObject {
 
     /// Emit with raw dictionary
     func emit(_ event: String, dict: [String: Any]) {
-        guard let webSocket else { return }
+        guard let webSocket else {
+            log.warning("Emit \(event) failed: not connected")
+            return
+        }
         guard let jsonData = try? JSONSerialization.data(withJSONObject: dict),
-              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+              let jsonString = String(data: jsonData, encoding: .utf8) else {
+            log.error("Emit \(event): JSON serialization failed")
+            return
+        }
 
         let message = "42[\"\(event)\",\(jsonString)]"
         webSocket.send(.string(message)) { error in
             if let error {
                 log.error("Emit failed for \(event): \(error.localizedDescription)")
+                Task { @MainActor in
+                    ErrorBus.shared.post("消息发送失败：\(event)", source: "socket")
+                }
             }
         }
     }
@@ -221,18 +238,31 @@ final class SocketClient: NSObject {
 
     private func parseEvent(_ body: String) {
         // body = ["eventName", {payload}]
-        guard let data = body.data(using: .utf8),
-              let array = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              let event = array.first as? String else {
+        guard let data = body.data(using: .utf8) else {
+            log.error("parseEvent: body is not valid UTF-8")
+            return
+        }
+
+        let parsed: Any
+        do {
+            parsed = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            log.error("parseEvent: JSON parse failed — \(error.localizedDescription), body=\(body.prefix(100))")
+            return
+        }
+
+        guard let array = parsed as? [Any], let event = array.first as? String else {
+            log.error("parseEvent: unexpected format, expected [String, ...], got \(type(of: parsed))")
             return
         }
 
         log.debug("Event received: \(event)")
 
-        // Extract payload (second element, re-serialize to Data)
-        var payloadData = Data()
+        let payloadData: Data
         if array.count > 1, let payloadObj = array[safe: 1] {
             payloadData = (try? JSONSerialization.data(withJSONObject: payloadObj)) ?? Data()
+        } else {
+            payloadData = Data()
         }
 
         onEvent?(event, payloadData)

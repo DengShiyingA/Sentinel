@@ -26,7 +26,7 @@ function loadHistory(): LogEntry[] {
 }
 
 function saveHistory(entries: LogEntry[]): void {
-  writeFileSync(HISTORY_PATH, JSON.stringify(entries, null, 2));
+  writeFileSync(HISTORY_PATH, JSON.stringify(entries, null, 2), { mode: 0o600 });
 }
 
 export function appendLog(entry: LogEntry): void {
