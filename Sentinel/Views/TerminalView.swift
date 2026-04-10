@@ -83,6 +83,15 @@ struct TerminalView: View {
                     showSlashMenu = newValue.hasPrefix("/")
                 }
             }
+            .overlay(alignment: .bottomTrailing) {
+                if relay.isConnected {
+                    FloatingInputBar(
+                        onSend: { text in store.sendUserMessage(text) },
+                        onInterrupt: { store.sendInterrupt() }
+                    )
+                    .padding(.bottom, 60) // above inputBar
+                }
+            }
         }
     }
 
@@ -122,16 +131,6 @@ struct TerminalView: View {
                         }
                     }
                 }
-            }
-            .overlay(alignment: .bottomTrailing) {
-                FloatingInputBar(
-                    onSend: { text in
-                        store.sendUserMessage(text)
-                    },
-                    onInterrupt: {
-                        store.sendInterrupt()
-                    }
-                )
             }
         }
     }
