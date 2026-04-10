@@ -5,6 +5,7 @@ import { log } from './logger';
 let child: ChildProcess | null = null;
 let shuttingDown = false;
 let spawnCwd: string = process.cwd();
+let managedStdin: import('stream').Writable | null = null;
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -32,13 +33,16 @@ function spawnClaude(args: string[]): void {
   log.info(`[claude-process] Spawning: claude ${args.join(' ')}`);
 
   child = spawn('claude', args, {
-    stdio: 'inherit',
+    stdio: ['pipe', 'inherit', 'inherit'],
     cwd: spawnCwd,
     env: { ...process.env },
   });
 
+  managedStdin = child.stdin ?? null;
+
   child.on('exit', (code) => {
     log.info(`[claude-process] Exited with code ${code}`);
+    managedStdin = null;
     child = null;
 
     if (!shuttingDown) {
@@ -59,6 +63,17 @@ function spawnClaude(args: string[]): void {
 }
 
 /**
+ * Write a message to the managed Claude process stdin (as if typed by user).
+ * Returns false if Claude is not running or stdin is unavailable.
+ */
+export function sendToManagedClaude(text: string): boolean {
+  if (!managedStdin || managedStdin.destroyed) return false;
+  managedStdin.write(text + '\n');
+  log.info(`[claude-process] Sent to stdin: ${text.slice(0, 60)}`);
+  return true;
+}
+
+/**
  * Send SIGINT to the running Claude process (equivalent to Ctrl+C).
  * Returns false if Claude is not running.
  */
@@ -75,6 +90,7 @@ export function interruptClaude(): boolean {
 /** Kill Claude process on sentinel shutdown. */
 export function stopClaude(): void {
   shuttingDown = true;
+  managedStdin = null;
   if (child && !child.killed) {
     child.kill('SIGTERM');
     child = null;
