@@ -129,15 +129,37 @@ export function getRules(): Rule[] {
 
 let iosCustomRules: Rule[] = [];
 
+const MAX_CUSTOM_RULES = 200;
+const MAX_PATTERN_LENGTH = 200;
+const VALID_RISKS: RiskAction[] = ['auto_allow', 'require_confirm', 'require_faceid'];
+
 /** Set custom rules received from iOS (merged with file rules) */
 export function setCustomRules(rules: Rule[]): void {
-  iosCustomRules = rules.map((r, i) => ({
-    ...r,
-    id: r.id ?? `ios-custom-${i}`,
-    priority: r.priority ?? 0,
-    risk: (r.risk ?? 'require_confirm') as RiskAction,
-    description: r.description ?? '',
-  }));
+  if (!Array.isArray(rules)) {
+    log.warn('setCustomRules: payload is not an array, ignoring');
+    return;
+  }
+  if (rules.length > MAX_CUSTOM_RULES) {
+    log.warn(`setCustomRules: too many rules (${rules.length}), truncating to ${MAX_CUSTOM_RULES}`);
+    rules = rules.slice(0, MAX_CUSTOM_RULES);
+  }
+
+  iosCustomRules = rules
+    .filter((r) => {
+      if (typeof r !== 'object' || r === null) return false;
+      if (typeof r.toolPattern === 'string' && r.toolPattern.length > MAX_PATTERN_LENGTH) return false;
+      if (typeof r.pathPattern === 'string' && r.pathPattern.length > MAX_PATTERN_LENGTH) return false;
+      if (r.risk !== undefined && !VALID_RISKS.includes(r.risk as RiskAction)) return false;
+      return true;
+    })
+    .map((r, i) => ({
+      ...r,
+      id: r.id ?? `ios-custom-${i}`,
+      // Clamp priority to safe bounds
+      priority: typeof r.priority === 'number' ? Math.max(-1000, Math.min(1000, r.priority)) : 0,
+      risk: (VALID_RISKS.includes(r.risk as RiskAction) ? r.risk : 'require_confirm') as RiskAction,
+      description: typeof r.description === 'string' ? r.description.slice(0, 200) : '',
+    }));
   cachedRules = null; // invalidate cache to merge on next load
   log.info(`Custom rules from iOS: ${iosCustomRules.length}`);
 }

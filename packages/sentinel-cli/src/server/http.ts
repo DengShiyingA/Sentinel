@@ -365,8 +365,8 @@ export function createHttpServer(port: number = 7749): express.Application {
 export function startHttpServer(port: number = 7749): Promise<void> {
   return new Promise((resolve) => {
     const app = createHttpServer(port);
-    app.listen(port, () => {
-      log.success(`Hook server listening on http://localhost:${port}`);
+    app.listen(port, '127.0.0.1', () => {
+      log.success(`Hook server listening on http://127.0.0.1:${port}`);
       log.dim(`  POST /hook    — PreToolUse (approval)`);
       log.dim(`  POST /event   — PostToolUse / Notification / Stop`);
       log.dim(`  GET  /events  — SSE stream`);

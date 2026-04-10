@@ -1,7 +1,22 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { log } from '../lib/logger';
+
+/**
+ * Atomically write JSON to a settings file with backup of the previous version.
+ * Backup goes to <path>.bak (overwritten on each install).
+ * Write goes to <path>.tmp then renames to <path> so a crash mid-write
+ * never leaves Claude with a corrupted settings.json.
+ */
+function safeWriteJson(path: string, data: unknown): void {
+  if (existsSync(path)) {
+    try { copyFileSync(path, `${path}.bak`); } catch { /* ignore */ }
+  }
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, JSON.stringify(data, null, 2));
+  renameSync(tmp, path);
+}
 
 const CLAUDE_DIR = join(homedir(), '.claude');
 const SETTINGS_PATH = join(CLAUDE_DIR, 'settings.json');
@@ -51,9 +66,10 @@ export function installHook(port: number = 7749): void {
     settings.hooks[hookType].push(makeHookEntry(port, endpoint));
   }
 
-  writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+  safeWriteJson(SETTINGS_PATH, settings);
   log.success('Hooks installed (PreToolUse, PostToolUse, Notification, Stop)');
   log.dim(`  Config: ${SETTINGS_PATH}`);
+  if (existsSync(`${SETTINGS_PATH}.bak`)) log.dim(`  Backup: ${SETTINGS_PATH}.bak`);
 }
 
 export function uninstallHook(port: number = 7749): void {
@@ -77,7 +93,7 @@ export function uninstallHook(port: number = 7749): void {
       }
     }
 
-    writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2));
+    safeWriteJson(SETTINGS_PATH, settings);
     log.success('All Sentinel hooks removed');
   } catch {
     log.warn('Could not update settings.json');

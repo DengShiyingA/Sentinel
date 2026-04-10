@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { getSentinelDir } from '../crypto/keys';
@@ -28,14 +28,21 @@ function isProcessRunning(pid: number): boolean {
 }
 
 function acquireLock(): boolean {
+  // First, clean up obviously stale locks (process gone)
   if (existsSync(LOCK_PATH)) {
-    const lockPid = parseInt(readFileSync(LOCK_PATH, 'utf-8').trim(), 10);
-    if (!isNaN(lockPid) && isProcessRunning(lockPid)) return false;
-    // Stale lock
-    try { unlinkSync(LOCK_PATH); } catch {}
+    try {
+      const lockPid = parseInt(readFileSync(LOCK_PATH, 'utf-8').trim(), 10);
+      if (!isNaN(lockPid) && isProcessRunning(lockPid)) return false;
+      unlinkSync(LOCK_PATH);
+    } catch { /* race: another acquirer beat us */ }
   }
-  writeFileSync(LOCK_PATH, String(process.pid));
-  return true;
+  // Atomic exclusive create — fails if another process gets there first
+  try {
+    writeFileSync(LOCK_PATH, String(process.pid), { flag: 'wx' });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function releaseLock(): void {
@@ -192,6 +199,7 @@ export function daemonInstallLaunchd(mode: string, port: number): void {
 </dict>
 </plist>`;
 
+  if (!existsSync(plistDir)) mkdirSync(plistDir, { recursive: true });
   writeFileSync(plistPath, plist);
   log.success(`LaunchAgent installed: ${plistPath}`);
   log.dim(`  Will auto-start on login.`);
