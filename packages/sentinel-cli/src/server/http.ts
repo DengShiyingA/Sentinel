@@ -17,6 +17,7 @@ import { generateDiff } from '../lib/diff';
 import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
 import spinners from 'unicode-animations';
+import { interruptClaude, isClaudeRunning } from '../lib/claude-process';
 
 /** Show an animated spinner for `durationMs`, then clear the line. */
 function showSpinner(name: 'pulse' | 'helix', prefix: string, durationMs: number): void {
@@ -52,7 +53,7 @@ export function pushEvent(data: Record<string, unknown>): void {
 }
 
 /** Send a terminal line to iOS via transport */
-function sendTerminalLine(text: string): void {
+export function sendTerminalLine(text: string): void {
   const transport = getTransport();
   if (transport?.isConnected) {
     transport.sendEvent?.({ type: 'terminal', text });
@@ -279,6 +280,16 @@ export function createHttpServer(port: number = 7749): express.Application {
     }
     log.info(`Notification: ${title ?? 'Sentinel'} — ${message}`);
     res.json({ success: true });
+  });
+
+  // ==================== Interrupt Claude ====================
+  app.post('/interrupt', (_req, res) => {
+    if (!isClaudeRunning()) {
+      return res.status(409).json({ error: 'Claude not running' });
+    }
+    const ok = interruptClaude();
+    log.info('[interrupt] SIGINT sent to Claude');
+    res.json({ success: ok });
   });
 
   // ==================== User message from iOS ====================
