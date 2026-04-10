@@ -19,3 +19,8 @@ xcuserdata/
 docs/superpowers/
 SKILL.md
 CLAUDE.md
+
+# iOS source (App Store distribution)
+Sentinel/
+Sentinel.xcodeproj/
+SentinelWidget/
