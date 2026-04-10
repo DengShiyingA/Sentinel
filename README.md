@@ -24,13 +24,16 @@
 ## 安装 CLI
 
 ```bash
-git clone https://github.com/DengShiyingA/Sentinel.git && cd Sentinel && ./install.sh && sentinel install
+npm install -g @two7722/sentinel-guard && sentinel install
 ```
 
 ## 使用
 
 ```bash
-# 局域网模式（同一 WiFi）
+# 托管模式（推荐）— 启动 Sentinel 并直接运行 Claude Code
+sentinel run
+
+# 监控模式 — 仅启动 hook 服务，Claude Code 单独运行
 sentinel start
 
 # 远程模式（跨网络，需要 brew install cloudflared）
