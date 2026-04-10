@@ -48,12 +48,25 @@ function spawnClaude(args: string[]): void {
     env: { ...process.env },
   });
 
-  child.on('exit', (code) => {
+  child.on('exit', (code, signal) => {
     unsilence(); // restore terminal logs between Claude sessions
-    log.info(`[claude-process] Exited with code ${code}`);
+    log.info(`[claude-process] Exited with code ${code}${signal ? ` (signal ${signal})` : ''}`);
     child = null;
 
-    if (!shuttingDown) {
+    // Clean exit (code 0) means user typed /exit — don't restart
+    // Restart only on signal-induced exits (SIGINT from iPhone interrupt) or crashes
+    const wasInterrupted = signal === 'SIGINT' || code === 130;
+    const wasCrash = code !== 0 && !wasInterrupted;
+
+    // If user cleanly exited Claude, also exit sentinel
+    if (!shuttingDown && code === 0 && !wasInterrupted) {
+      log.info('[claude-process] Claude exited cleanly — shutting down sentinel');
+      shuttingDown = true;
+      setTimeout(() => process.exit(0), 100);
+      return;
+    }
+
+    if (!shuttingDown && (wasInterrupted || wasCrash)) {
       const now = Date.now();
       const elapsed = now - lastExitTime;
       lastExitTime = now;

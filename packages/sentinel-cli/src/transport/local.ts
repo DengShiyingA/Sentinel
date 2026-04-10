@@ -217,7 +217,9 @@ export class LocalTransport implements Transport {
       this.activeClaudeProcess.kill('SIGTERM');
     }
 
-    const child = cpSpawn('claude', ['--continue', '--print', message], {
+    const model = getCurrentModel();
+    const args = ['--continue', '--print', message, ...(model ? ['--model', model] : [])];
+    const child = cpSpawn('claude', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
     });
