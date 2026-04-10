@@ -208,7 +208,8 @@ program
     startClaude(claudeArgs.length > 0 ? claudeArgs : []);
 
     console.log('');
-    log.success('Sentinel is running with managed Claude process. Press Ctrl+C to stop.\n');
+    log.success('Sentinel is running with managed Claude process. Press Ctrl+C to stop.');
+    log.dim('Sentinel logs → ~/.sentinel/run.log (silent while Claude TUI is active)\n');
 
     const shutdown = () => {
       console.log('');

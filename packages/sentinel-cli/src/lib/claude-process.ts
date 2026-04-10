@@ -1,6 +1,6 @@
 // packages/sentinel-cli/src/lib/claude-process.ts
 import { spawn, type ChildProcess } from 'child_process';
-import { log } from './logger';
+import { log, silenceForClaude, unsilence } from './logger';
 
 let child: ChildProcess | null = null;
 let shuttingDown = false;
@@ -29,6 +29,7 @@ export function startClaude(args: string[] = []): void {
 }
 
 function spawnClaude(args: string[]): void {
+  silenceForClaude(); // suppress sentinel logs while Claude TUI is active
   log.info(`[claude-process] Spawning: claude ${args.join(' ')}`);
 
   child = spawn('claude', args, {
@@ -38,6 +39,7 @@ function spawnClaude(args: string[]): void {
   });
 
   child.on('exit', (code) => {
+    unsilence(); // restore terminal logs between Claude sessions
     log.info(`[claude-process] Exited with code ${code}`);
     child = null;
 
