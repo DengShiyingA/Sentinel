@@ -5,6 +5,8 @@ import { log, silenceForClaude, unsilence } from './logger';
 let child: ChildProcess | null = null;
 let shuttingDown = false;
 let spawnCwd: string = process.cwd();
+let restartCount = 0;
+let lastExitTime = 0;
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -24,6 +26,8 @@ export function startClaude(args: string[] = []): void {
   }
 
   shuttingDown = false;
+  restartCount = 0;
+  lastExitTime = 0;
   spawnCwd = process.cwd();
   spawnClaude(args);
 }
@@ -44,13 +48,29 @@ function spawnClaude(args: string[]): void {
     child = null;
 
     if (!shuttingDown) {
-      // Auto-restart with --continue so user can keep working in the terminal
+      const now = Date.now();
+      const elapsed = now - lastExitTime;
+      lastExitTime = now;
+
+      // Reset counter if Claude ran for more than 10 seconds
+      if (elapsed > 10_000) {
+        restartCount = 0;
+      } else {
+        restartCount++;
+      }
+
+      // Exponential backoff: 500ms, 1s, 2s, 4s... max 30s
+      const delay = Math.min(500 * Math.pow(2, restartCount - 1), 30_000);
+      if (restartCount > 1) {
+        log.warn(`[claude-process] Fast exit detected (${restartCount}x). Restarting in ${delay}ms...`);
+      }
+
       setTimeout(() => {
         if (!shuttingDown) {
           log.info('[claude-process] Restarting with --continue...');
           spawnClaude(['--continue']);
         }
-      }, 500);
+      }, delay);
     }
   });
 

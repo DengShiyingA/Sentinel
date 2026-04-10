@@ -4,13 +4,10 @@ import { Command } from 'commander';
 import chalk from 'chalk';
 import qrcode from 'qrcode-terminal';
 import { ensureToken, loadToken, getStoredServerURL } from '../api/client';
-import { startHttpServer, setupUserMessageHandler } from '../server/http';
 import { installHook, uninstallHook } from '../install/setup';
-import { getRules, watchRules, setCustomRules, matchRules } from '../rules/engine';
+import { getRules, matchRules } from '../rules/engine';
 import { getPublicKeyBase64 } from '../crypto/keys';
-import { pending } from '../relay/pending';
-import { setTransport, getTransport, type TransportMode } from '../transport/interface';
-import { createTransport } from '../transport/factory';
+import { getTransport, type TransportMode } from '../transport/interface';
 import { LocalTransport } from '../transport/local';
 import { getHistory, getTodayStats } from '../lib/history';
 import { setBudgetLimit, getBudgetStatus, isOverBudget } from '../lib/budget';
@@ -21,6 +18,7 @@ import { getMode, setMode, getModeInfo, ALL_MODES, MODE_DESCRIPTIONS, type Permi
 import { listSessions } from '../lib/session';
 import { log } from '../lib/logger';
 import { startClaude, stopClaude } from '../lib/claude-process';
+import { bootstrapSentinel } from './bootstrap';
 
 const program = new Command();
 
@@ -57,99 +55,22 @@ program
     const port = parseInt(opts.port, 10);
     const mode = parseMode(opts.mode);
 
-    // Daemon mode: fork and exit
-    if (opts.daemon) {
-      daemonStart(mode, port, opts.server);
-      return;
-    }
-
-    const modeLabels: Record<TransportMode, string> = {
-      local: '局域网直连', cloudkit: 'CloudKit 同步', server: '自建服务器',
-    };
+    if (opts.daemon) { daemonStart(mode, port, opts.server); return; }
 
     console.log(chalk.bold('\n  🛡️  Sentinel CLI\n'));
-    log.info(`Mode: ${modeLabels[mode]}`);
+    log.info(`Mode: ${mode}`);
 
-    // Show active overrides
     const ov = getOverrideState();
-    if (ov.blockAll) console.log(chalk.bgRed.white.bold('  ⛔ BLOCK ALL active — all requests will be blocked  '));
-    if (ov.allowAll) console.log(chalk.bgGreen.white.bold('  ✅ ALLOW ALL active — all requests will be allowed  '));
+    if (ov.blockAll) console.log(chalk.bgRed.white.bold('  ⛔ BLOCK ALL active  '));
+    if (ov.allowAll) console.log(chalk.bgGreen.white.bold('  ✅ ALLOW ALL active  '));
     if (isOverBudget()) log.warn('⚠ Over daily budget!');
 
-    if (mode === 'server') {
-      const serverURL = opts.server ?? getStoredServerURL();
-      if (!serverURL) { log.error('Server mode requires -s URL.'); process.exit(1); }
-      log.info('Authenticating...');
-      const tokenData = await ensureToken(serverURL);
-      const transport = createTransport('server', { serverUrl: serverURL, token: tokenData.token });
-      setTransport(transport);
-      log.info(`Connecting to ${serverURL}...`);
-      await transport.start();
-    } else if (mode === 'cloudkit') {
-      const transport = createTransport('cloudkit');
-      setTransport(transport);
-      await transport.start();
-    } else {
-      const transport = createTransport('local');
-      setTransport(transport);
-      await transport.start();
-      if (transport instanceof LocalTransport) {
-        const info = transport.getConnectionInfo();
-        log.info(`iOS can connect to: ${info.ip}:${info.port}`);
-
-        try {
-          const qrcode = require('qrcode-terminal');
-          const qrData = `sentinel://${info.ip}:${info.port}`;
-          console.log('');
-          log.info('Scan QR code with Sentinel iOS app:');
-          qrcode.generate(qrData, { small: true }, (code: string) => {
-            console.log(code);
-          });
-        } catch {}
-
-        transport.onRulesUpdate((rules) => setCustomRules(rules));
-      }
-    }
-
-    watchRules();
-    await startHttpServer(port);
-    setupUserMessageHandler();
-
-    if (opts.remote) {
-      const { startTunnel, stopTunnel } = require('../lib/tunnel');
-      try {
-        log.info('Starting Cloudflare Tunnel...');
-        const tunnelUrl = await startTunnel(7750);
-        const remoteAddr = tunnelUrl.replace('https://', '').replace('http://', '');
-        log.success(`Remote: ${tunnelUrl}`);
-
-        try {
-          const qrcode = require('qrcode-terminal');
-          const qrData = `sentinel-remote://${remoteAddr}`;
-          console.log('');
-          log.info('Scan QR code for remote access:');
-          qrcode.generate(qrData, { small: true }, (code: string) => {
-            console.log(code);
-          });
-        } catch {}
-
-        process.on('SIGINT', () => { stopTunnel(); process.exit(); });
-        process.on('SIGTERM', () => { stopTunnel(); process.exit(); });
-      } catch (err) {
-        log.error(`Tunnel failed: ${(err as Error).message}`);
-      }
-    }
+    const cleanup = await bootstrapSentinel({ mode, port, server: opts.server, remote: opts.remote });
 
     console.log('');
     log.success('Sentinel is running. Press Ctrl+C to stop.\n');
 
-    const shutdown = () => {
-      console.log('');
-      log.info('Shutting down...');
-      pending.clear();
-      getTransport()?.stop();
-      process.exit(0);
-    };
+    const shutdown = () => { console.log(''); log.info('Shutting down...'); cleanup(); process.exit(0); };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
   });
@@ -170,55 +91,15 @@ program
     console.log(chalk.bold('\n  🛡️  Sentinel Run\n'));
     log.info(`Mode: ${mode} | Hosting Claude Code process`);
 
-    // Start transport (same as sentinel start local mode)
-    const transport = createTransport('local');
-    setTransport(transport);
-    await transport.start();
-    if (transport instanceof LocalTransport) {
-      const info = transport.getConnectionInfo();
-      log.info(`iOS can connect to: ${info.ip}:${info.port}`);
-      try {
-        const qrcode = require('qrcode-terminal');
-        const qrData = `sentinel://${info.ip}:${info.port}`;
-        console.log('');
-        log.info('Scan QR code with Sentinel iOS app:');
-        qrcode.generate(qrData, { small: true }, (code: string) => { console.log(code); });
-      } catch {}
-      transport.onRulesUpdate((rules) => setCustomRules(rules));
-    }
+    const cleanup = await bootstrapSentinel({ mode, port, server: opts.server, remote: opts.remote });
 
-    watchRules();
-    await startHttpServer(port);
-    setupUserMessageHandler();
-
-    if (opts.remote) {
-      const { startTunnel, stopTunnel } = require('../lib/tunnel');
-      try {
-        log.info('Starting Cloudflare Tunnel...');
-        const tunnelUrl = await startTunnel(7750);
-        log.success(`Remote: ${tunnelUrl}`);
-        process.on('SIGINT', () => { stopTunnel(); });
-        process.on('SIGTERM', () => { stopTunnel(); });
-      } catch (err) {
-        log.error(`Tunnel failed: ${(err as Error).message}`);
-      }
-    }
-
-    // Spawn Claude with any extra args the user passed
     startClaude(claudeArgs.length > 0 ? claudeArgs : []);
 
     console.log('');
     log.success('Sentinel is running with managed Claude process. Press Ctrl+C to stop.');
     log.dim('Sentinel logs → ~/.sentinel/run.log (silent while Claude TUI is active)\n');
 
-    const shutdown = () => {
-      console.log('');
-      log.info('Shutting down...');
-      stopClaude();
-      pending.clear();
-      getTransport()?.stop();
-      process.exit(0);
-    };
+    const shutdown = () => { console.log(''); log.info('Shutting down...'); stopClaude(); cleanup(); process.exit(0); };
     process.on('SIGINT', shutdown);
     process.on('SIGTERM', shutdown);
   });
