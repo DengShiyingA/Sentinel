@@ -7,6 +7,7 @@ let shuttingDown = false;
 let spawnCwd: string = process.cwd();
 let restartCount = 0;
 let lastExitTime = 0;
+let currentModel: string = '';
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -19,7 +20,7 @@ export function isClaudeRunning(): boolean {
  * On exit (unless shutting down), auto-restarts with --continue.
  * @param args Extra args passed to `claude` on first launch
  */
-export function startClaude(args: string[] = []): void {
+export function startClaude(args: string[] = [], model?: string): void {
   if (isClaudeRunning()) {
     log.warn('[claude-process] Already running — ignoring startClaude call');
     return;
@@ -29,14 +30,19 @@ export function startClaude(args: string[] = []): void {
   restartCount = 0;
   lastExitTime = 0;
   spawnCwd = process.cwd();
+  if (model !== undefined) {
+    currentModel = model;
+  }
   spawnClaude(args);
 }
 
 function spawnClaude(args: string[]): void {
   silenceForClaude(); // suppress sentinel logs while Claude TUI is active
-  log.info(`[claude-process] Spawning: claude ${args.join(' ')}`);
+  const modelArgs = currentModel ? ['--model', currentModel] : [];
+  const fullArgs = [...args, ...modelArgs];
+  log.info(`[claude-process] Spawning: claude ${fullArgs.join(' ')}`);
 
-  child = spawn('claude', args, {
+  child = spawn('claude', fullArgs, {
     stdio: 'inherit',
     cwd: spawnCwd,
     env: { ...process.env },
@@ -78,6 +84,19 @@ function spawnClaude(args: string[]): void {
     log.error(`[claude-process] Spawn error: ${err.message}`);
     child = null;
   });
+}
+
+export function getCurrentModel(): string {
+  return currentModel;
+}
+
+export function setModel(model: string): void {
+  currentModel = model;
+  log.info(`[claude-process] Model set to: ${model}`);
+  if (isClaudeRunning()) {
+    log.info('[claude-process] Interrupting Claude to restart with new model...');
+    child!.kill('SIGINT');
+  }
 }
 
 /**

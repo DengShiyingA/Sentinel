@@ -10,7 +10,7 @@ import { log } from '../lib/logger';
 import { networkInterfaces } from 'os';
 import type { Rule } from '../rules/engine';
 import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
-import { interruptClaude } from '../lib/claude-process';
+import { interruptClaude, setModel, getCurrentModel } from '../lib/claude-process';
 
 const TCP_PORT = 7750;
 const SERVICE_TYPE = 'sentinel';
@@ -77,6 +77,7 @@ export class LocalTransport implements Transport {
           this.send('workspace_info', {
             cwd: process.cwd(),
             hostname: require('os').hostname(),
+            model: getCurrentModel(),
           });
         }, 500);
 
@@ -182,6 +183,12 @@ export class LocalTransport implements Transport {
     } else if (msg.event === 'interrupt') {
       log.info('[local] Interrupt from iOS');
       interruptClaude();
+    } else if (msg.event === 'set_model') {
+      const model = msg.data?.model as string | undefined;
+      if (model) {
+        log.info(`[local] Model change from iOS: ${model}`);
+        setModel(model);
+      }
     } else if (msg.event === 'heartbeat_ack') {
       // iOS responded to heartbeat
     }
