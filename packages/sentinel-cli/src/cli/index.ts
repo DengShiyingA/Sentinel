@@ -20,6 +20,8 @@ import { daemonStart, daemonStop, daemonStatus, daemonRestart, daemonInstallLaun
 import { getMode, setMode, getModeInfo, ALL_MODES, MODE_DESCRIPTIONS, type PermissionMode } from '../lib/modes';
 import { listSessions } from '../lib/session';
 import { log } from '../lib/logger';
+import { startClaude, stopClaude, setLineCallback } from '../lib/claude-process';
+import { sendTerminalLine } from '../server/http';
 
 const program = new Command();
 
@@ -145,6 +147,77 @@ program
     const shutdown = () => {
       console.log('');
       log.info('Shutting down...');
+      pending.clear();
+      getTransport()?.stop();
+      process.exit(0);
+    };
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
+  });
+
+// ==================== sentinel run ====================
+
+program
+  .command('run [claudeArgs...]')
+  .description('启动 Sentinel 并托管 Claude Code 进程（支持 iPhone 打断）')
+  .option('-m, --mode <mode>', '连接模式: local | cloudkit | server', 'local')
+  .option('-r, --remote', '远程穿透（Cloudflare Tunnel）')
+  .option('-p, --port <port>', 'HTTP hook 端口', '7749')
+  .allowUnknownOption(true)
+  .action(async (claudeArgs: string[], opts) => {
+    const port = parseInt(opts.port, 10);
+    const mode = parseMode(opts.mode);
+
+    console.log(chalk.bold('\n  🛡️  Sentinel Run\n'));
+    log.info(`Mode: ${mode} | Hosting Claude Code process`);
+
+    // Start transport (same as sentinel start local mode)
+    const transport = createTransport('local');
+    setTransport(transport);
+    await transport.start();
+    if (transport instanceof LocalTransport) {
+      const info = transport.getConnectionInfo();
+      log.info(`iOS can connect to: ${info.ip}:${info.port}`);
+      try {
+        const qrcode = require('qrcode-terminal');
+        const qrData = `sentinel://${info.ip}:${info.port}`;
+        console.log('');
+        log.info('Scan QR code with Sentinel iOS app:');
+        qrcode.generate(qrData, { small: true }, (code: string) => { console.log(code); });
+      } catch {}
+      transport.onRulesUpdate((rules) => setCustomRules(rules));
+    }
+
+    watchRules();
+    await startHttpServer(port);
+    setupUserMessageHandler();
+
+    if (opts.remote) {
+      const { startTunnel, stopTunnel } = require('../lib/tunnel');
+      try {
+        log.info('Starting Cloudflare Tunnel...');
+        const tunnelUrl = await startTunnel(7750);
+        log.success(`Remote: ${tunnelUrl}`);
+        process.on('SIGINT', () => { stopTunnel(); });
+        process.on('SIGTERM', () => { stopTunnel(); });
+      } catch (err) {
+        log.error(`Tunnel failed: ${(err as Error).message}`);
+      }
+    }
+
+    // Wire stdout/stderr → iOS terminal
+    setLineCallback(sendTerminalLine);
+
+    // Spawn Claude with any extra args the user passed
+    startClaude(claudeArgs.length > 0 ? claudeArgs : []);
+
+    console.log('');
+    log.success('Sentinel is running with managed Claude process. Press Ctrl+C to stop.\n');
+
+    const shutdown = () => {
+      console.log('');
+      log.info('Shutting down...');
+      stopClaude();
       pending.clear();
       getTransport()?.stop();
       process.exit(0);
