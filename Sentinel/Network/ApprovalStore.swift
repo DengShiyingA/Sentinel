@@ -349,13 +349,15 @@ final class ApprovalStore {
     @MainActor
     func clearTerminal() {
         terminalLines.removeAll()
+        userMessages.removeAll()
         rebuildTimeline()
     }
 
     // MARK: - Send Message to Mac
 
     func sendUserMessage(_ text: String) {
-        let entry = UserMessageEntry(text: text)
+        var entry = UserMessageEntry(text: text)
+        entry.status = .sent
         userMessages.append(entry)
         relay.sendUserMessage(text)
         rebuildTimeline()
