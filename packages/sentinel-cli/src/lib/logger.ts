@@ -24,8 +24,10 @@ export function silenceForClaude(): void {
 
 export function unsilence(): void {
   silenced = false;
-  logStream?.end();
+  // Capture and null first so any concurrent write() calls go to stdout
+  const stream = logStream;
   logStream = null;
+  stream?.end();
 }
 
 function write(prefix: string, msg: string): void {

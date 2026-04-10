@@ -255,6 +255,10 @@ export class LocalTransport implements Transport {
         exitCode: code,
       });
       log.success(`[local] Claude responded (${trimmed.length} chars, exit ${code})`);
+      // Clear reference and detach listeners to prevent leaks
+      if (this.activeClaudeProcess === child) this.activeClaudeProcess = null;
+      child.stdout?.removeAllListeners('data');
+      child.stderr?.removeAllListeners('data');
     });
 
     child.on('error', (err) => {
@@ -264,6 +268,7 @@ export class LocalTransport implements Transport {
         message: `错误: ${err.message}`,
         exitCode: -1,
       });
+      if (this.activeClaudeProcess === child) this.activeClaudeProcess = null;
     });
   }
 

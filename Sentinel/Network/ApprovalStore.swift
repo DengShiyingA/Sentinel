@@ -148,7 +148,7 @@ final class ApprovalStore {
 
         for i in 1..<sorted.count {
             let req = sorted[i]
-            let lastInGroup = current.requests.last!
+            guard let lastInGroup = current.requests.last else { continue }
             let gap = req.timestamp.timeIntervalSince(lastInGroup.timestamp)
 
             if req.toolName == current.toolName && gap <= 3.0 {

@@ -73,12 +73,13 @@ function spawnClaude(args: string[]): void {
 
       // Reset counter if Claude ran for more than 10 seconds
       if (elapsed > 10_000) {
-        restartCount = 0;
+        restartCount = 1;
       } else {
         restartCount++;
       }
 
       // Exponential backoff: 500ms, 1s, 2s, 4s... max 30s
+      // restartCount is always >= 1 here so 2^(n-1) is safe
       const delay = Math.min(500 * Math.pow(2, restartCount - 1), 30_000);
       if (restartCount > 1) {
         log.warn(`[claude-process] Fast exit detected (${restartCount}x). Restarting in ${delay}ms...`);

@@ -238,10 +238,14 @@ export function createHttpServer(port: number = 7749): express.Application {
       pushEvent({ time: ts, type: 'stop', stopReason, summary });
 
       // Check for pending user message → auto-resume
+      // Atomic claim: rename to a unique temp file before reading
+      // so concurrent stop events can't double-process the same message
       if (existsSync(PENDING_MSG_PATH)) {
+        const claimPath = `${PENDING_MSG_PATH}.${process.pid}.${Date.now()}`;
         try {
-          const msg = readFileSync(PENDING_MSG_PATH, 'utf-8').trim();
-          unlinkSync(PENDING_MSG_PATH);
+          require('fs').renameSync(PENDING_MSG_PATH, claimPath);
+          const msg = readFileSync(claimPath, 'utf-8').trim();
+          unlinkSync(claimPath);
           if (msg) {
             log.info(`[event] Resuming Claude with message: ${msg.slice(0, 50)}...`);
             const child = spawn('claude', ['--continue', '--print', msg], {
@@ -250,7 +254,10 @@ export function createHttpServer(port: number = 7749): express.Application {
             child.unref();
             showSpinner('helix', 'Claude Code 正在启动…', 3000);
           }
-        } catch {}
+        } catch (err) {
+          // File was already claimed by another handler, or read/spawn failed
+          log.debug(`[event] Pending message claim/spawn failed: ${(err as Error).message}`);
+        }
       }
 
     } else if (hookEvent === 'TaskCompleted' || hookEvent === 'task_completed') {
