@@ -22,6 +22,7 @@ final class RelayService {
     var onDecisionSync: ((String) -> Void)?
     var onTerminal: ((String) -> Void)?
     var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)?
+    var onModel: ((String) -> Void)?
 
     init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
         self.socket = socket
@@ -186,6 +187,12 @@ final class RelayService {
         guard let local = local as? LocalDiscoveryService else { return }
         local.emit("interrupt", dict: [:])
         log.info("Interrupt sent to Mac")
+    }
+
+    func sendSetModel(_ modelId: String) {
+        guard let local = local as? LocalDiscoveryService else { return }
+        local.emit("set_model", dict: ["model": modelId])
+        log.info("Model change sent: \(modelId)")
     }
 
     func sendRulesUpdate(rules: [[String: Any]]) {

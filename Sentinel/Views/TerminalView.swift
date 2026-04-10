@@ -10,6 +10,7 @@ struct TerminalView: View {
     @State private var showSlashMenu = false
     @State private var commandResult: String?
     @State private var showSessionHistory = false
+    @State private var showModelPicker = false
 
     var body: some View {
         NavigationStack {
@@ -24,8 +25,19 @@ struct TerminalView: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.head)
+                        Spacer()
+                        Button {
+                            showModelPicker = true
+                        } label: {
+                            Text(store.currentModel.displayName)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(store.currentModel.color)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(store.currentModel.color.opacity(0.12), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                     .background(Color(.secondarySystemGroupedBackground))
@@ -77,6 +89,16 @@ struct TerminalView: View {
             }
             .sheet(isPresented: $showSessionHistory) {
                 SessionHistoryView()
+            }
+            .confirmationDialog("切换模型", isPresented: $showModelPicker, titleVisibility: .visible) {
+                ForEach(ClaudeModel.allCases, id: \.self) { model in
+                    Button(model.displayName) {
+                        store.sendSetModel(model)
+                    }
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("选择后 Claude 将自动重启")
             }
             .onChange(of: messageText) { _, newValue in
                 withAnimation(Theme.springAnimation) {

@@ -24,6 +24,7 @@ final class ApprovalStore {
     var syncToast: String?
     var workspacePath: String?
     var workspaceHost: String?
+    var currentModel: ClaudeModel = .sonnet
 
     /// History of resolved approval requests with their decisions.
     var decisionHistory: [DecisionRecord] = []
@@ -174,6 +175,13 @@ final class ApprovalStore {
             Task { @MainActor in
                 self?.workspacePath = cwd
                 self?.workspaceHost = hostname
+            }
+        }
+        relay.onModel = { [weak self] modelId in
+            Task { @MainActor in
+                if let model = ClaudeModel(rawValue: modelId) {
+                    self?.currentModel = model
+                }
             }
         }
     }
@@ -365,6 +373,11 @@ final class ApprovalStore {
 
     func sendInterrupt() {
         relay.sendInterrupt()
+    }
+
+    func sendSetModel(_ model: ClaudeModel) {
+        currentModel = model
+        relay.sendSetModel(model.rawValue)
     }
 
     // MARK: - Timeout
