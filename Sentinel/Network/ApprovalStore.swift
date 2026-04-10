@@ -29,6 +29,11 @@ final class ApprovalStore {
     /// History of resolved approval requests with their decisions.
     var decisionHistory: [DecisionRecord] = []
 
+    var todayCallCount: Int {
+        let cal = Calendar.current
+        return decisionHistory.filter { cal.isDateInToday($0.decidedAt) }.count
+    }
+
     /// Pending rule suggestions shown in timeline.
     var pendingSuggestions: [RuleSuggestion] = []
     /// Dismissed suggestion pattern keys — never suggest again.

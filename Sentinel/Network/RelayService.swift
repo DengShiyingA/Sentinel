@@ -47,6 +47,7 @@ final class RelayService {
         oldTransport?.onDecisionSync = nil
         oldTransport?.onTerminal = nil
         oldTransport?.onWorkspaceInfo = nil
+        oldTransport?.onModel = nil
         oldTransport?.disconnect()
         transport = nil
         isConnected = false
@@ -68,6 +69,7 @@ final class RelayService {
         newTransport.onDecisionSync = onDecisionSync
         newTransport.onTerminal = onTerminal
         newTransport.onWorkspaceInfo = onWorkspaceInfo
+        newTransport.onModel = onModel
         transport = newTransport
 
         // Connect async
