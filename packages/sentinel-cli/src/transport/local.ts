@@ -10,6 +10,7 @@ import { log } from '../lib/logger';
 import { networkInterfaces } from 'os';
 import type { Rule } from '../rules/engine';
 import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
+import { interruptClaude } from '../lib/claude-process';
 
 const TCP_PORT = 7750;
 const SERVICE_TYPE = 'sentinel';
@@ -178,6 +179,9 @@ export class LocalTransport implements Transport {
         this.userMessageCb?.(text);
         this.runClaude(text);
       }
+    } else if (msg.event === 'interrupt') {
+      log.info('[local] Interrupt from iOS');
+      interruptClaude();
     } else if (msg.event === 'heartbeat_ack') {
       // iOS responded to heartbeat
     }
