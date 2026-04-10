@@ -361,6 +361,10 @@ final class ApprovalStore {
         rebuildTimeline()
     }
 
+    func sendInterrupt() {
+        relay.sendInterrupt()
+    }
+
     // MARK: - Timeout
 
     private func scheduleTimeout(for request: ApprovalRequest) {
