@@ -16,6 +16,20 @@ import { addSessionEvent, getCurrentSession, startSession } from '../lib/session
 import { generateDiff } from '../lib/diff';
 import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
+import spinners from 'unicode-animations';
+
+/** Show an animated spinner for `durationMs`, then clear the line. */
+function showSpinner(name: 'pulse' | 'helix', prefix: string, durationMs: number): void {
+  const { frames, interval } = spinners[name];
+  let i = 0;
+  const id = setInterval(() => {
+    process.stdout.write(`\r\x1B[2K ${frames[i++ % frames.length]} ${prefix}`);
+  }, interval);
+  setTimeout(() => {
+    clearInterval(id);
+    process.stdout.write('\r\x1B[2K');
+  }, durationMs);
+}
 
 const HookPayloadSchema = z.object({
   tool_name: z.string(),
@@ -233,6 +247,7 @@ export function createHttpServer(port: number = 7749): express.Application {
               detached: true, stdio: 'ignore',
             });
             child.unref();
+            showSpinner('helix', 'Claude Code 正在启动…', 3000);
           }
         } catch {}
       }
@@ -272,6 +287,7 @@ export function createHttpServer(port: number = 7749): express.Application {
     if (!text) return res.status(400).json({ error: 'text required' });
     writeFileSync(PENDING_MSG_PATH, text);
     log.info(`Pending message saved: ${text.slice(0, 50)}`);
+    showSpinner('pulse', '消息已排队，等待 Claude 停止…', 5000);
     res.json({ success: true });
   });
 
