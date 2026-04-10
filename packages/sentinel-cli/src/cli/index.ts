@@ -20,8 +20,7 @@ import { daemonStart, daemonStop, daemonStatus, daemonRestart, daemonInstallLaun
 import { getMode, setMode, getModeInfo, ALL_MODES, MODE_DESCRIPTIONS, type PermissionMode } from '../lib/modes';
 import { listSessions } from '../lib/session';
 import { log } from '../lib/logger';
-import { startClaude, stopClaude, setLineCallback } from '../lib/claude-process';
-import { sendTerminalLine } from '../server/http';
+import { startClaude, stopClaude } from '../lib/claude-process';
 
 const program = new Command();
 
@@ -204,9 +203,6 @@ program
         log.error(`Tunnel failed: ${(err as Error).message}`);
       }
     }
-
-    // Wire stdout/stderr → iOS terminal
-    setLineCallback(sendTerminalLine);
 
     // Spawn Claude with any extra args the user passed
     startClaude(claudeArgs.length > 0 ? claudeArgs : []);

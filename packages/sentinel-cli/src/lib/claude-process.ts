@@ -1,17 +1,8 @@
 // packages/sentinel-cli/src/lib/claude-process.ts
 import { spawn, type ChildProcess } from 'child_process';
-// strip-ansi v6 is CommonJS — require() works with esModuleInterop
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const stripAnsi = require('strip-ansi') as (str: string) => string;
 import { log } from './logger';
 
 let child: ChildProcess | null = null;
-let lineCallback: ((line: string) => void) | null = null;
-
-/** Register a callback that receives each stripped output line from Claude. */
-export function setLineCallback(cb: (line: string) => void): void {
-  lineCallback = cb;
-}
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -19,7 +10,8 @@ export function isClaudeRunning(): boolean {
 
 /**
  * Spawn Claude Code as a managed child process.
- * stdout/stderr → Mac terminal (inherited write) + iOS via lineCallback.
+ * stdio: 'inherit' so Claude gets a real TTY and runs in interactive mode.
+ * SIGINT can be sent via interruptClaude() to stop mid-task.
  * @param args Extra args passed to `claude` (e.g. ['--continue'])
  */
 export function startClaude(args: string[] = []): void {
@@ -31,40 +23,11 @@ export function startClaude(args: string[] = []): void {
   log.info(`[claude-process] Spawning: claude ${args.join(' ')}`);
 
   child = spawn('claude', args, {
-    stdio: ['inherit', 'pipe', 'pipe'],
+    stdio: 'inherit',
     env: { ...process.env },
   });
 
-  let lineBuffer = '';
-
-  const handleChunk = (chunk: Buffer): void => {
-    const raw = chunk.toString();
-    // Forward raw bytes to Mac terminal so colours/TUI work normally
-    process.stdout.write(raw);
-
-    // Strip ANSI and split into lines for iOS forwarding
-    lineBuffer += stripAnsi(raw);
-    const lines = lineBuffer.split('\n');
-    lineBuffer = lines.pop() ?? '';
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed.length === 0) continue;
-      // Skip lines that are only control characters after stripping
-      if (/^[\x00-\x1F\x7F]+$/.test(trimmed)) continue;
-      const capped = trimmed.length > 500 ? trimmed.slice(0, 500) + '…' : trimmed;
-      lineCallback?.(capped);
-    }
-  };
-
-  child.stdout?.on('data', handleChunk);
-  child.stderr?.on('data', handleChunk);
-
   child.on('exit', (code) => {
-    // Flush any remaining line buffer
-    if (lineBuffer.trim()) {
-      lineCallback?.(lineBuffer.trim());
-      lineBuffer = '';
-    }
     log.info(`[claude-process] Exited with code ${code}`);
     child = null;
   });
