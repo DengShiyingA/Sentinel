@@ -10,7 +10,7 @@ import { log } from '../lib/logger';
 import { networkInterfaces } from 'os';
 import type { Rule } from '../rules/engine';
 import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
-import { interruptClaude, isClaudeRunning, sendToManagedClaude } from '../lib/claude-process';
+import { interruptClaude } from '../lib/claude-process';
 
 const TCP_PORT = 7750;
 const SERVICE_TYPE = 'sentinel';
@@ -177,13 +177,7 @@ export class LocalTransport implements Transport {
       if (text) {
         log.info(`[local] Message from iOS: ${text}`);
         this.userMessageCb?.(text);
-        // If sentinel run is active, write directly to managed Claude's stdin
-        // instead of spawning a separate --print process
-        if (isClaudeRunning() && sendToManagedClaude(text)) {
-          log.info(`[local] Forwarded to managed Claude stdin`);
-        } else {
-          this.runClaude(text);
-        }
+        this.runClaude(text);
       }
     } else if (msg.event === 'interrupt') {
       log.info('[local] Interrupt from iOS');
