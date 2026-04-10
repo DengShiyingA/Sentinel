@@ -124,9 +124,14 @@ struct TerminalView: View {
                 }
             }
             .overlay(alignment: .bottomTrailing) {
-                FloatingInputBar { text in
-                    store.sendUserMessage(text)
-                }
+                FloatingInputBar(
+                    onSend: { text in
+                        store.sendUserMessage(text)
+                    },
+                    onInterrupt: {
+                        store.sendInterrupt()
+                    }
+                )
             }
         }
     }

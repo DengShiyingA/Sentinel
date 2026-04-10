@@ -3,14 +3,14 @@ import SwiftUI
 
 struct FloatingInputBar: View {
     let onSend: (String) -> Void
+    let onInterrupt: () -> Void
 
     @State private var isExpanded = false
     @State private var inputText = ""
     @FocusState private var isFocused: Bool
 
-    private let shortcuts: [(label: String, message: String)] = [
+    private let textShortcuts: [(label: String, message: String)] = [
         ("继续", "continue"),
-        ("停止", "stop and summarize what you've done"),
         ("换个方案", "stop and try a different approach"),
     ]
 
@@ -45,7 +45,21 @@ struct FloatingInputBar: View {
             // Shortcut buttons
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(shortcuts, id: \.label) { shortcut in
+                    // 停止 button — sends SIGINT via onInterrupt
+                    Button {
+                        onInterrupt()
+                        withAnimation(Theme.springAnimation) { isExpanded = false }
+                        isFocused = false
+                    } label: {
+                        Text("停止")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.red.opacity(0.1), in: Capsule())
+                    }
+
+                    ForEach(textShortcuts, id: \.label) { shortcut in
                         Button {
                             send(shortcut.message)
                         } label: {
@@ -102,8 +116,9 @@ struct FloatingInputBar: View {
 #Preview {
     ZStack(alignment: .bottomTrailing) {
         Color(.systemGroupedBackground).ignoresSafeArea()
-        FloatingInputBar { text in
-            print("Send: \(text)")
-        }
+        FloatingInputBar(
+            onSend: { text in print("Send: \(text)") },
+            onInterrupt: { print("Interrupt!") }
+        )
     }
 }
