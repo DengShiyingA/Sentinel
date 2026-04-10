@@ -3,6 +3,8 @@ import { spawn, type ChildProcess } from 'child_process';
 import { log } from './logger';
 
 let child: ChildProcess | null = null;
+let shuttingDown = false;
+let initialArgs: string[] = [];
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -12,7 +14,8 @@ export function isClaudeRunning(): boolean {
  * Spawn Claude Code as a managed child process.
  * stdio: 'inherit' so Claude gets a real TTY and runs in interactive mode.
  * SIGINT can be sent via interruptClaude() to stop mid-task.
- * @param args Extra args passed to `claude` (e.g. ['--continue'])
+ * On exit (unless shutting down), auto-restarts with --continue.
+ * @param args Extra args passed to `claude` on first launch
  */
 export function startClaude(args: string[] = []): void {
   if (isClaudeRunning()) {
@@ -20,6 +23,12 @@ export function startClaude(args: string[] = []): void {
     return;
   }
 
+  shuttingDown = false;
+  initialArgs = args;
+  spawnClaude(args);
+}
+
+function spawnClaude(args: string[]): void {
   log.info(`[claude-process] Spawning: claude ${args.join(' ')}`);
 
   child = spawn('claude', args, {
@@ -30,6 +39,16 @@ export function startClaude(args: string[] = []): void {
   child.on('exit', (code) => {
     log.info(`[claude-process] Exited with code ${code}`);
     child = null;
+
+    if (!shuttingDown) {
+      // Auto-restart with --continue so user can keep working in the terminal
+      setTimeout(() => {
+        if (!shuttingDown) {
+          log.info('[claude-process] Restarting with --continue...');
+          spawnClaude(['--continue']);
+        }
+      }, 500);
+    }
   });
 
   child.on('error', (err) => {
@@ -54,6 +73,7 @@ export function interruptClaude(): boolean {
 
 /** Kill Claude process on sentinel shutdown. */
 export function stopClaude(): void {
+  shuttingDown = true;
   if (child && !child.killed) {
     child.kill('SIGTERM');
     child = null;
