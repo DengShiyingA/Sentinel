@@ -6,22 +6,22 @@ struct UserMessageCard: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            // Blue left accent bar (matches design: blue = user message)
+            // Claude coral left accent bar
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color.blue)
+                .fill(Theme.claude)
                 .frame(width: 3)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Image(systemName: entry.status == .pending ? "clock" : "checkmark.circle.fill")
                         .font(.caption2)
-                        .foregroundStyle(entry.status == .pending ? Color.secondary : Color.blue)
+                        .foregroundStyle(entry.status == .pending ? Color.secondary : Theme.claude)
 
                     Text(entry.status == .pending
                          ? String(localized: "排队中")
                          : String(localized: "已发送"))
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(entry.status == .pending ? Color.secondary : Color.blue)
+                        .foregroundStyle(entry.status == .pending ? Color.secondary : Theme.claude)
 
                     Spacer()
 
@@ -38,7 +38,7 @@ struct UserMessageCard: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.blue.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+        .background(Theme.claudeLight.opacity(0.33), in: RoundedRectangle(cornerRadius: 10))
         .animation(.easeInOut(duration: 0.2), value: entry.status == .pending)
     }
 }
