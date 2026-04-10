@@ -4,7 +4,7 @@ import { log } from './logger';
 
 let child: ChildProcess | null = null;
 let shuttingDown = false;
-let initialArgs: string[] = [];
+let spawnCwd: string = process.cwd();
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -24,7 +24,7 @@ export function startClaude(args: string[] = []): void {
   }
 
   shuttingDown = false;
-  initialArgs = args;
+  spawnCwd = process.cwd();
   spawnClaude(args);
 }
 
@@ -33,6 +33,7 @@ function spawnClaude(args: string[]): void {
 
   child = spawn('claude', args, {
     stdio: 'inherit',
+    cwd: spawnCwd,
     env: { ...process.env },
   });
 
