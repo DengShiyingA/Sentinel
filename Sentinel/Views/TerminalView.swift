@@ -19,7 +19,7 @@ struct TerminalView: View {
                     HStack(spacing: 6) {
                         Image(systemName: "folder.fill")
                             .font(.caption2)
-                            .foregroundStyle(Theme.claude)
+                            .foregroundStyle(.teal)
                         Text(path)
                             .font(.caption2.monospaced())
                             .foregroundStyle(.secondary)
@@ -244,7 +244,7 @@ struct TerminalView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "terminal")
                 .font(.caption)
-                .foregroundStyle(Theme.claude)
+                .foregroundStyle(.teal)
             Text(text)
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundStyle(.primary)
@@ -252,7 +252,7 @@ struct TerminalView: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.claudeLight, in: RoundedRectangle(cornerRadius: Theme.cardRadius))
+        .background(Color.teal.opacity(0.06), in: RoundedRectangle(cornerRadius: Theme.cardRadius))
     }
 
     private var slashCommandList: some View {
@@ -265,7 +265,7 @@ struct TerminalView: View {
                 if !localCmds.isEmpty {
                     sectionHeader(String(localized: "Sentinel"))
                     ForEach(localCmds) { cmd in
-                        commandRow(cmd, color: Theme.claude)
+                        commandRow(cmd, color: .teal)
                     }
                 }
                 if !claudeCmds.isEmpty {
@@ -546,7 +546,7 @@ struct TerminalView: View {
         if text.hasPrefix("❌") { return .red }
         if text.hasPrefix("📢") { return .orange }
         if text.hasPrefix(">") { return .blue }
-        if text.hasPrefix("[") { return Theme.claude }
+        if text.hasPrefix("[") { return .teal }
         return .primary
     }
 }

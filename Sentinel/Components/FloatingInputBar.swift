@@ -32,7 +32,7 @@ struct FloatingInputBar: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 44, height: 44)
-                    .background(Theme.claude, in: Circle())
+                    .background(Color.blue, in: Circle())
                     .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
             }
         }
