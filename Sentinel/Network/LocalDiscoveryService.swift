@@ -144,6 +144,52 @@ final class LocalDiscoveryService {
         connectWebSocket(host: host, port: port, scheme: "ws")
     }
 
+    /// Connect directly to a WebSocket URL, bypassing Bonjour discovery.
+    /// Used for remote access via Cloudflare Tunnel.
+    /// - Parameters:
+    ///   - urlString: Full URL like "wss://xxx.trycloudflare.com" (no path suffix required)
+    ///   - publicKey: Optional base64 X25519 public key from pairing. Currently used only
+    ///     as a log/verification hint; the actual handshake still happens over the WS the
+    ///     same way LAN does. Remote peer verification is a future enhancement.
+    func connectRemote(url urlString: String, publicKey: String? = nil) {
+        stopDiscovery()
+        reconnectTask?.cancel()
+        disconnect()
+
+        guard let url = URL(string: urlString) else {
+            log.error("Invalid remote URL: \(urlString)")
+            Task { @MainActor in
+                self.connectionError = String(localized: "无效的远程地址")
+            }
+            return
+        }
+
+        // URL may or may not include explicit port. wss defaults to 443.
+        let host = url.host ?? ""
+        let port: UInt16 = UInt16(url.port ?? 443)
+        let scheme = url.scheme ?? "wss"
+
+        guard !host.isEmpty else {
+            log.error("Remote URL missing host: \(urlString)")
+            Task { @MainActor in
+                self.connectionError = String(localized: "远程地址缺少主机名")
+            }
+            return
+        }
+
+        log.info("Connecting remote \(scheme)://\(host):\(port)")
+
+        // Reuse the existing connectWebSocket helper.
+        connectWebSocket(host: host, port: port, scheme: scheme)
+
+        // publicKey is currently unused beyond logging. Remote peer verification
+        // against the pairing key is a future enhancement; for now the handshake
+        // still happens over the WebSocket the same way LAN does.
+        if let publicKey {
+            log.info("Remote peer public key hint: \(publicKey.prefix(16))...")
+        }
+    }
+
     private func connectWebSocket(host: String, port: UInt16, scheme: String) {
         guard let url = URL(string: "\(scheme)://\(host):\(port)/") else {
             log.error("Invalid URL: \(scheme)://\(host):\(port)")
