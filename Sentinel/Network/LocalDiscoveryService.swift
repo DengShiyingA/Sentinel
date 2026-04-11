@@ -87,10 +87,25 @@ final class LocalDiscoveryService {
         // Probe the endpoint briefly just to get the resolved host:port
         let params = NWParameters.tcp
         let probe = NWConnection(to: endpoint, using: params)
+        // Local flag shared by the state handler and the timeout task so that
+        // whichever path resolves first wins and the other becomes a no-op.
+        var resolved = false
+        let timeoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            guard !resolved else { return }
+            resolved = true
+            log.error("Probe timed out after 5s")
+            probe.cancel()
+            self?.connectionError = String(localized: "无法解析服务地址")
+        }
         probe.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             switch state {
             case .ready:
+                if resolved { return }
+                resolved = true
+                timeoutTask.cancel()
                 if case .hostPort(let host, let port) = probe.currentPath?.remoteEndpoint {
                     let hostStr = "\(host)"
                         .replacingOccurrences(of: "[", with: "")
@@ -108,6 +123,9 @@ final class LocalDiscoveryService {
                     }
                 }
             case .failed(let err):
+                if resolved { return }
+                resolved = true
+                timeoutTask.cancel()
                 log.error("Probe failed: \(err)")
                 probe.cancel()
                 Task { @MainActor in self.connectionError = err.localizedDescription }
