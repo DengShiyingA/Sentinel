@@ -1,12 +1,45 @@
 import SwiftUI
 
+/// Sheet for creating or editing a TerminalProfile.
+///
+/// When `existing` is nil, the sheet is in "add" mode: empty form, commit
+/// button says 添加.
+/// When `existing` is a profile, the sheet is in "edit" mode: fields are
+/// pre-populated, commit button says 保存, and a destructive "delete" row
+/// is shown at the bottom.
 struct AddTerminalSheet: View {
-    let onAdd: (TerminalProfile) -> Void
+    let existing: TerminalProfile?
+    let onSave: (TerminalProfile) -> Void
+    let onDelete: ((TerminalProfile) -> Void)?
+
     @Environment(\.dismiss) private var dismiss
+
+    // Form state
     @State private var name = ""
+    @State private var useBonjour = true
     @State private var portText = "7750"
+    @State private var hostText = ""
+    @State private var remoteUrl: String?
+    @State private var remotePublicKey: String?
+
+    // UI state
     @State private var showQRScanner = false
     @State private var scanErrorMessage: String?
+    @State private var showDeleteConfirm = false
+
+    // MARK: - Init
+
+    init(
+        existing: TerminalProfile? = nil,
+        onSave: @escaping (TerminalProfile) -> Void,
+        onDelete: ((TerminalProfile) -> Void)? = nil
+    ) {
+        self.existing = existing
+        self.onSave = onSave
+        self.onDelete = onDelete
+    }
+
+    private var isEditing: Bool { existing != nil }
 
     var body: some View {
         NavigationStack {
@@ -18,6 +51,7 @@ struct AddTerminalSheet: View {
                 }
 
                 Section {
+                    Toggle(String(localized: "自动发现 (Bonjour)"), isOn: $useBonjour)
                     HStack {
                         Text(String(localized: "端口"))
                         Spacer()
@@ -26,50 +60,101 @@ struct AddTerminalSheet: View {
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
                     }
+                    if !useBonjour {
+                        HStack {
+                            Text(String(localized: "主机"))
+                            Spacer()
+                            TextField("192.168.1.10", text: $hostText)
+                                .autocorrectionDisabled()
+                                .textInputAutocapitalization(.never)
+                                .multilineTextAlignment(.trailing)
+                                .frame(maxWidth: 200)
+                        }
+                    }
                 } header: {
-                    Text(String(localized: "连接"))
+                    Text(String(localized: "局域网连接"))
                 } footer: {
-                    Text(String(localized: "在 Mac 上运行：sentinel run --port \(portText.isEmpty ? "7750" : portText)"))
-                        .font(.caption)
-                        .monospaced()
+                    if useBonjour {
+                        Text(String(localized: "通过 mDNS 自动发现同局域网的 Mac。在 Mac 上运行：sentinel run --port \(portText.isEmpty ? "7750" : portText)"))
+                            .font(.caption)
+                    } else {
+                        Text(String(localized: "输入 Mac 的 IP/主机名。当 Bonjour 不可用（跨子网 / 公司网络）时使用。"))
+                            .font(.caption)
+                    }
                 }
 
                 Section {
-                    Button {
-                        showQRScanner = true
-                    } label: {
-                        Label(String(localized: "扫描远程二维码"), systemImage: "qrcode.viewfinder")
+                    if let remoteUrl, !remoteUrl.isEmpty {
+                        LabeledContent(String(localized: "Tunnel")) {
+                            Text(remoteUrl.replacingOccurrences(of: "wss://", with: ""))
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Button {
+                            showQRScanner = true
+                        } label: {
+                            Label(String(localized: "重新扫描"), systemImage: "qrcode.viewfinder")
+                        }
+                        Button(role: .destructive) {
+                            self.remoteUrl = nil
+                            self.remotePublicKey = nil
+                        } label: {
+                            Label(String(localized: "清除远程配置"), systemImage: "xmark.circle")
+                        }
+                    } else {
+                        Button {
+                            showQRScanner = true
+                        } label: {
+                            Label(String(localized: "扫描远程二维码"), systemImage: "qrcode.viewfinder")
+                        }
                     }
                 } header: {
                     Text(String(localized: "远程访问"))
                 } footer: {
-                    Text(String(localized: "Mac 端运行 sentinel run --remote 获取二维码"))
+                    Text(String(localized: "Mac 运行 sentinel run --remote 后扫码配对。出门蜂窝网络时自动走 Cloudflare Tunnel。"))
+                        .font(.caption)
+                }
+
+                if isEditing, let profile = existing {
+                    metaSection(profile)
+                }
+
+                if isEditing, onDelete != nil {
+                    Section {
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label(String(localized: "删除此终端"), systemImage: "trash")
+                        }
+                    } footer: {
+                        Text(String(localized: "删除后历史记录不受影响。规则不会被删除。"))
+                            .font(.caption)
+                    }
                 }
             }
-            .navigationTitle(String(localized: "添加终端"))
+            .navigationTitle(isEditing
+                             ? String(localized: "编辑终端")
+                             : String(localized: "添加终端"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(String(localized: "取消")) { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(String(localized: "添加")) {
-                        let port = Int(portText) ?? 7750
-                        let profile = TerminalProfile(
-                            name: name.isEmpty ? String(localized: "终端") : name,
-                            port: port,
-                            useBonjour: port == 7750
-                        )
-                        onAdd(profile)
-                        dismiss()
+                    Button(isEditing
+                           ? String(localized: "保存")
+                           : String(localized: "添加")) {
+                        commit()
                     }
                     .fontWeight(.semibold)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(!canCommit)
                 }
             }
             .sheet(isPresented: $showQRScanner) {
-                QRScannerView { scannedString in
-                    handleRemoteScan(scannedString)
+                QRScannerView { scanned in
+                    handleRemoteScan(scanned)
                 }
             }
             .alert(
@@ -84,8 +169,106 @@ struct AddTerminalSheet: View {
             } message: { message in
                 Text(message)
             }
+            .confirmationDialog(
+                String(localized: "确定删除此终端？"),
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "删除"), role: .destructive) {
+                    if let profile = existing {
+                        onDelete?(profile)
+                        dismiss()
+                    }
+                }
+                Button(String(localized: "取消"), role: .cancel) {}
+            }
+            .onAppear { hydrate() }
         }
     }
+
+    // MARK: - Sections
+
+    private func metaSection(_ profile: TerminalProfile) -> some View {
+        Section {
+            if let path = profile.lastPath {
+                LabeledContent(String(localized: "上次路径")) {
+                    Text(path)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                }
+            }
+            if let used = profile.lastUsedAt {
+                LabeledContent(String(localized: "上次使用")) {
+                    Text(used, style: .relative)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            LabeledContent(String(localized: "创建时间")) {
+                Text(profile.createdAt, format: .dateTime.month().day().hour().minute())
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text(String(localized: "状态"))
+        }
+    }
+
+    // MARK: - Hydration
+
+    private func hydrate() {
+        guard let p = existing else { return }
+        name = p.name
+        useBonjour = p.useBonjour
+        portText = String(p.port)
+        hostText = p.host
+        remoteUrl = p.remoteUrl
+        remotePublicKey = p.remotePublicKey
+    }
+
+    // MARK: - Validation
+
+    private var canCommit: Bool {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { return false }
+        if Int(portText) == nil { return false }
+        if !useBonjour && hostText.trimmingCharacters(in: .whitespaces).isEmpty {
+            return false
+        }
+        return true
+    }
+
+    // MARK: - Commit
+
+    private func commit() {
+        let port = Int(portText) ?? 7750
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        let trimmedHost = hostText.trimmingCharacters(in: .whitespaces)
+
+        if var profile = existing {
+            // Edit mode: mutate existing profile, preserving id/createdAt/lastUsedAt/lastPath
+            profile.name = trimmedName.isEmpty ? profile.name : trimmedName
+            profile.port = port
+            profile.useBonjour = useBonjour
+            profile.host = useBonjour ? "" : trimmedHost
+            profile.remoteUrl = remoteUrl
+            profile.remotePublicKey = remotePublicKey
+            onSave(profile)
+        } else {
+            // Add mode: fresh profile with defaults for lastPath/lastUsedAt
+            var profile = TerminalProfile(
+                name: trimmedName.isEmpty ? String(localized: "终端") : trimmedName,
+                port: port,
+                useBonjour: useBonjour,
+                host: useBonjour ? "" : trimmedHost
+            )
+            profile.remoteUrl = remoteUrl
+            profile.remotePublicKey = remotePublicKey
+            onSave(profile)
+        }
+        dismiss()
+    }
+
+    // MARK: - Remote scan
 
     private func handleRemoteScan(_ scannedString: String) {
         showQRScanner = false
@@ -97,13 +280,11 @@ struct AddTerminalSheet: View {
             return
         }
 
-        // Extract #key=ENCODED fragment
         guard let fragment = url.fragment else {
             scanErrorMessage = String(localized: "远程二维码缺少密钥")
             return
         }
 
-        // fragment is "key=ENCODED_BASE64"
         let parts = fragment.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0] == "key" else {
             scanErrorMessage = String(localized: "远程二维码缺少密钥")
@@ -116,15 +297,13 @@ struct AddTerminalSheet: View {
             return
         }
 
-        var profile = TerminalProfile(
-            name: String(localized: "远程 \(host)"),
-            port: 443,
-            useBonjour: false
-        )
-        profile.remoteUrl = "wss://\(host)"
-        profile.remotePublicKey = decodedKey
+        remoteUrl = "wss://\(host)"
+        remotePublicKey = decodedKey
 
-        onAdd(profile)
-        dismiss()
+        // Auto-fill name from host ONLY if we're in add mode and name is empty —
+        // editing shouldn't rename unless the user explicitly changes it.
+        if !isEditing && name.trimmingCharacters(in: .whitespaces).isEmpty {
+            name = String(localized: "远程 \(host)")
+        }
     }
 }

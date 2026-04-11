@@ -5,8 +5,7 @@ struct TerminalListView: View {
     @Environment(ApprovalStore.self) private var store
     @State private var profiles: [TerminalProfile] = TerminalProfile.load()
     @State private var showAddSheet = false
-    @State private var renamingProfile: TerminalProfile?
-    @State private var renameText = ""
+    @State private var editingProfile: TerminalProfile?
 
     var body: some View {
         NavigationStack {
@@ -31,20 +30,20 @@ struct TerminalListView: View {
                     TerminalProfile.save(profiles)
                 }
             }
-            .alert(String(localized: "重命名终端"), isPresented: Binding(
-                get: { renamingProfile != nil },
-                set: { if !$0 { renamingProfile = nil } }
-            )) {
-                TextField(String(localized: "名称"), text: $renameText)
-                Button(String(localized: "保存")) {
-                    if let idx = profiles.firstIndex(where: { $0.id == renamingProfile?.id }),
-                       !renameText.trimmingCharacters(in: .whitespaces).isEmpty {
-                        profiles[idx].name = renameText.trimmingCharacters(in: .whitespaces)
+            .sheet(item: $editingProfile) { profile in
+                AddTerminalSheet(
+                    existing: profile,
+                    onSave: { updated in
+                        if let idx = profiles.firstIndex(where: { $0.id == updated.id }) {
+                            profiles[idx] = updated
+                            TerminalProfile.save(profiles)
+                        }
+                    },
+                    onDelete: { toDelete in
+                        profiles.removeAll { $0.id == toDelete.id }
                         TerminalProfile.save(profiles)
                     }
-                    renamingProfile = nil
-                }
-                Button(String(localized: "取消"), role: .cancel) { renamingProfile = nil }
+                )
             }
         }
     }
@@ -72,12 +71,25 @@ struct TerminalListView: View {
                 } label: {
                     profileRow(profile)
                 }
+                .swipeActions(edge: .trailing) {
+                    Button {
+                        editingProfile = profile
+                    } label: {
+                        Label(String(localized: "编辑"), systemImage: "pencil")
+                    }
+                    .tint(.blue)
+                    Button(role: .destructive) {
+                        profiles.removeAll { $0.id == profile.id }
+                        TerminalProfile.save(profiles)
+                    } label: {
+                        Label(String(localized: "删除"), systemImage: "trash")
+                    }
+                }
                 .contextMenu {
                     Button {
-                        renameText = profile.name
-                        renamingProfile = profile
+                        editingProfile = profile
                     } label: {
-                        Label(String(localized: "重命名"), systemImage: "pencil")
+                        Label(String(localized: "编辑"), systemImage: "pencil")
                     }
                     Button(role: .destructive) {
                         profiles.removeAll { $0.id == profile.id }
@@ -88,7 +100,6 @@ struct TerminalListView: View {
                 }
             }
             .onDelete { indexSet in
-                // Map sorted indices back to profiles array
                 let ids = indexSet.map { sortedProfiles[$0].id }
                 profiles.removeAll { ids.contains($0.id) }
                 TerminalProfile.save(profiles)
@@ -109,8 +120,15 @@ struct TerminalListView: View {
             }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(profile.name)
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Text(profile.name)
+                        .font(.headline)
+                    if profile.hasRemote {
+                        Image(systemName: "globe")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                    }
+                }
 
                 if let path = profile.lastPath {
                     Text(path)
@@ -119,9 +137,7 @@ struct TerminalListView: View {
                         .lineLimit(1)
                         .truncationMode(.head)
                 } else {
-                    Text(profile.useBonjour
-                         ? String(localized: "自动发现 · 端口 \(profile.port)")
-                         : "\(profile.host):\(profile.port)")
+                    Text(subtitle(for: profile))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -136,6 +152,19 @@ struct TerminalListView: View {
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private func subtitle(for profile: TerminalProfile) -> String {
+        if profile.useBonjour {
+            return String(localized: "自动发现 · 端口 \(profile.port)")
+        }
+        if !profile.host.isEmpty {
+            return "\(profile.host):\(profile.port)"
+        }
+        if profile.hasRemote {
+            return String(localized: "远程")
+        }
+        return String(localized: "未配置")
     }
 
     // MARK: - Empty State
