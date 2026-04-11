@@ -28,6 +28,7 @@ final class LocalDiscoveryService {
     private var buffer = Data()
     private var lastHost: String?
     private var lastPort: UInt16?
+    private var lastScheme: String = "ws"
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempts = 0
     private static let maxBufferSize = SentinelConfig.maxBufferSize
@@ -193,9 +194,7 @@ final class LocalDiscoveryService {
     private func connectWebSocket(host: String, port: UInt16, scheme: String) {
         guard let url = URL(string: "\(scheme)://\(host):\(port)/") else {
             log.error("Invalid URL: \(scheme)://\(host):\(port)")
-            Task { @MainActor in
-                self.connectionError = "Invalid URL: \(scheme)://\(host):\(port)"
-            }
+            connectionError = "Invalid URL: \(scheme)://\(host):\(port)"
             return
         }
         log.info("Connecting WebSocket to \(url)")
@@ -206,19 +205,21 @@ final class LocalDiscoveryService {
         buffer = Data()
 
         let session = URLSession(configuration: .default)
-        self.urlSession = session
+        urlSession = session
         let task = session.webSocketTask(with: url)
-        self.webSocket = task
-        self.lastHost = host
-        self.lastPort = port
+        webSocket = task
+        lastHost = host
+        lastPort = port
+        lastScheme = scheme
         task.resume()
 
-        Task { @MainActor in
-            self.isConnected = true
-            self.connectionError = nil
-            self.discoveredHost = host
-            self.reconnectAttempts = 0
-        }
+        // NOTE: we do NOT set isConnected = true here. The WebSocket task is
+        // resuming asynchronously and may still fail (DNS, TLS, refused
+        // connection, etc). isConnected flips to true in receiveLoop() once
+        // we actually receive our first frame from the server (the handshake).
+        connectionError = nil
+        discoveredHost = host
+        reconnectAttempts = 0
 
         receiveLoop()
     }
@@ -237,11 +238,12 @@ final class LocalDiscoveryService {
 
         log.info("Reconnecting in \(delay)s (attempt \(self.reconnectAttempts))")
 
+        let scheme = lastScheme
         reconnectTask = Task {
             try? await Task.sleep(for: .seconds(delay))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                self.connectWebSocket(host: host, port: port, scheme: "ws")
+                self.connectWebSocket(host: host, port: port, scheme: scheme)
             }
         }
     }
@@ -254,10 +256,12 @@ final class LocalDiscoveryService {
         urlSession?.invalidateAndCancel()
         urlSession = nil
         buffer = Data()
-        Task { @MainActor in
-            self.isConnected = false
-            self.discoveredHost = nil
-        }
+        // Synchronous — disconnect() is already MainActor-isolated, so state
+        // updates must happen immediately. A deferred Task { @MainActor in ... }
+        // causes races where isConnected is still observed as true right after
+        // disconnect() returns (e.g. in hybrid Phase1→Phase2 switch).
+        isConnected = false
+        discoveredHost = nil
     }
 
     // MARK: - Send (same JSON format as remote mode)
@@ -278,54 +282,49 @@ final class LocalDiscoveryService {
     private func receiveLoop() {
         guard let ws = webSocket else { return }
         ws.receive { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let message):
-                switch message {
-                case .string(let text):
-                    if let data = text.data(using: .utf8) {
+            // URLSession delivers this on its own serial queue (not MainActor).
+            // Bounce everything onto MainActor before touching `self` state.
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                switch result {
+                case .success(let message):
+                    // First successful frame means the server accepted our upgrade
+                    // and is sending the handshake. Flip isConnected to true.
+                    if !self.isConnected {
+                        self.isConnected = true
+                        self.connectionError = nil
+                    }
+                    var frameData: Data?
+                    switch message {
+                    case .string(let text):
+                        frameData = text.data(using: .utf8)
+                    case .data(let data):
+                        frameData = data
+                    @unknown default:
+                        break
+                    }
+                    if let data = frameData {
                         self.buffer.append(data)
                         if self.buffer.count > Self.maxBufferSize {
                             log.error("Buffer exceeded \(Self.maxBufferSize) bytes, dropping connection")
                             self.buffer = Data()
                             self.webSocket?.cancel(with: .goingAway, reason: nil)
-                            Task { @MainActor in
-                                ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
-                                                     recovery: String(localized: "将自动重连"))
-                                self.isConnected = false
-                            }
+                            ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
+                                                 recovery: String(localized: "将自动重连"))
+                            self.isConnected = false
                             self.scheduleReconnect()
                             return
                         }
                         self.processBuffer()
                     }
-                case .data(let data):
-                    self.buffer.append(data)
-                    if self.buffer.count > Self.maxBufferSize {
-                        log.error("Buffer exceeded \(Self.maxBufferSize) bytes, dropping connection")
-                        self.buffer = Data()
-                        self.webSocket?.cancel(with: .goingAway, reason: nil)
-                        Task { @MainActor in
-                            ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
-                                                 recovery: String(localized: "将自动重连"))
-                            self.isConnected = false
-                        }
-                        self.scheduleReconnect()
-                        return
-                    }
-                    self.processBuffer()
-                @unknown default:
-                    break
-                }
-                // Loop again for next message
-                self.receiveLoop()
-            case .failure(let error):
-                log.error("WebSocket receive error: \(error.localizedDescription)")
-                Task { @MainActor in
+                    self.receiveLoop()
+
+                case .failure(let error):
+                    log.error("WebSocket receive error: \(error.localizedDescription)")
                     self.isConnected = false
                     self.connectionError = error.localizedDescription
+                    self.scheduleReconnect()
                 }
-                self.scheduleReconnect()
             }
         }
     }

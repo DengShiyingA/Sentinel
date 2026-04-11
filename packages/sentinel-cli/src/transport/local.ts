@@ -13,6 +13,7 @@ import type { Rule } from '../rules/engine';
 import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
 import { readdirSync, statSync } from 'fs';
 import { dirname, join } from 'path';
+import stripAnsi from 'strip-ansi';
 import { homedir } from 'os';
 import { interruptClaude, setModel, getCurrentModel, setCwd, getSpawnCwd } from '../lib/claude-process';
 
@@ -277,7 +278,10 @@ export class LocalTransport implements Transport {
     let lineBuffer = '';
 
     const streamLines = (chunk: Buffer) => {
-      lineBuffer += chunk.toString();
+      // Strip ANSI codes before forwarding to iOS so colors/cursor codes
+      // don't render as garbage in the terminal view.
+      const cleanChunk = stripAnsi(chunk.toString());
+      lineBuffer += cleanChunk;
       const lines = lineBuffer.split('\n');
       lineBuffer = lines.pop() ?? '';
       for (const line of lines) {
@@ -285,7 +289,7 @@ export class LocalTransport implements Transport {
           this.send('terminal', { type: 'terminal', text: line });
         }
       }
-      output += chunk.toString();
+      output += cleanChunk;
     };
 
     child.stdout?.on('data', streamLines);

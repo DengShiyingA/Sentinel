@@ -51,6 +51,7 @@ final class RelayService {
         oldTransport?.onTerminal = nil
         oldTransport?.onWorkspaceInfo = nil
         oldTransport?.onModel = nil
+        oldTransport?.onBrowseResult = nil
         oldTransport?.disconnect()
         transport = nil
         isConnected = false
@@ -105,7 +106,18 @@ final class RelayService {
 
     func connectManual(host: String, port: UInt16) {
         connectTask?.cancel()
-        transport?.disconnect()
+
+        // Clear callbacks on old transport first to prevent stale events
+        let oldTransport = transport
+        oldTransport?.onRequest = nil
+        oldTransport?.onActivity = nil
+        oldTransport?.onDecisionSync = nil
+        oldTransport?.onTerminal = nil
+        oldTransport?.onWorkspaceInfo = nil
+        oldTransport?.onModel = nil
+        oldTransport?.onBrowseResult = nil
+        oldTransport?.disconnect()
+
         transport = nil
         isConnected = false
         connectionError = nil
@@ -117,6 +129,8 @@ final class RelayService {
         localTransport.onActivity = onActivity
         localTransport.onDecisionSync = onDecisionSync
         localTransport.onTerminal = onTerminal
+        localTransport.onWorkspaceInfo = onWorkspaceInfo
+        localTransport.onModel = onModel
         localTransport.onBrowseResult = onBrowseResult
         transport = localTransport
 
