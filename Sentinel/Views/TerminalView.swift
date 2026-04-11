@@ -11,20 +11,27 @@ struct TerminalView: View {
     @State private var commandResult: String?
     @State private var showSessionHistory = false
     @State private var showModelPicker = false
+    @State private var showFileBrowser = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 if let path = store.workspacePath, relay.isConnected {
                     HStack(spacing: 6) {
-                        Image(systemName: "folder.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.teal)
-                        Text(path)
-                            .font(.caption2.monospaced())
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.head)
+                        Button {
+                            showFileBrowser = true
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "folder.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.teal)
+                                Text(path)
+                                    .font(.caption2.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.head)
+                            }
+                        }
+                        .buttonStyle(.plain)
                         Spacer()
                         Button {
                             showModelPicker = true
@@ -41,6 +48,11 @@ struct TerminalView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
                     .background(Color(.secondarySystemGroupedBackground))
+                    .sheet(isPresented: $showFileBrowser) {
+                        FileBrowserView(initialPath: path) { newPath in
+                            store.sendSetCwd(newPath)
+                        }
+                    }
                 }
 
                 if store.timeline.isEmpty && commandResult == nil {
@@ -56,7 +68,6 @@ struct TerminalView: View {
                 Divider()
                 inputBar
             }
-            .navigationTitle(String(localized: "终端"))
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Circle()
@@ -114,7 +125,8 @@ struct TerminalView: View {
                     .padding(.bottom, 60) // above inputBar
                 }
             }
-        }
+        .navigationTitle(String(localized: "终端"))
+        .navigationBarTitleDisplayMode(.large)
     }
 
     private var feedList: some View {

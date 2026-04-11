@@ -40,9 +40,10 @@ struct ApprovalGroup: Identifiable {
     }
 }
 
-struct DecisionRecord: Identifiable {
+struct DecisionRecord: Identifiable, Codable {
     let id: String
     let request: ApprovalRequest
     let decision: Decision
     let decidedAt: Date
+    let sessionId: String
 }

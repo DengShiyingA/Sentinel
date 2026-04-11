@@ -1,5 +1,6 @@
 // packages/sentinel-cli/src/lib/claude-process.ts
 import { spawn, type ChildProcess } from 'child_process';
+import { existsSync } from 'fs';
 import { log, silenceForClaude, unsilence } from './logger';
 
 let child: ChildProcess | null = null;
@@ -9,6 +10,8 @@ let restartCount = 0;
 let lastExitTime = 0;
 let currentModel: string = '';
 let initialArgs: string[] = []; // user-provided args from `sentinel run -- ...`, preserved across restarts
+let pendingModelRestart = false; // set when setModel() kills Claude — don't treat exit as clean
+let pendingCwdRestart = false;  // set when setCwd() kills Claude — restart fresh in new dir
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -55,6 +58,26 @@ function spawnClaude(args: string[]): void {
     unsilence(); // restore terminal logs between Claude sessions
     log.info(`[claude-process] Exited with code ${code}${signal ? ` (signal ${signal})` : ''}`);
     child = null;
+
+    // Model change triggered this exit — restart with --continue in same dir
+    if (pendingModelRestart) {
+      pendingModelRestart = false;
+      if (!shuttingDown) {
+        log.info('[claude-process] Restarting with new model...');
+        spawnClaude(['--continue', ...initialArgs]);
+      }
+      return;
+    }
+
+    // Directory change triggered this exit — restart fresh (no --continue) in new dir
+    if (pendingCwdRestart) {
+      pendingCwdRestart = false;
+      if (!shuttingDown) {
+        log.info(`[claude-process] Restarting in new directory: ${spawnCwd}`);
+        spawnClaude([...initialArgs]);
+      }
+      return;
+    }
 
     // Clean exit (code 0) means user typed /exit — don't restart
     // Restart only on signal-induced exits (SIGINT from iPhone interrupt) or crashes
@@ -109,11 +132,30 @@ export function getCurrentModel(): string {
   return currentModel;
 }
 
+export function getSpawnCwd(): string {
+  return spawnCwd;
+}
+
+export function setCwd(newCwd: string): void {
+  if (!existsSync(newCwd)) {
+    log.warn(`[claude-process] setCwd: path does not exist: ${newCwd}`);
+    return;
+  }
+  spawnCwd = newCwd;
+  log.info(`[claude-process] Working directory set to: ${newCwd}`);
+  if (isClaudeRunning()) {
+    log.info('[claude-process] Interrupting Claude to restart in new directory...');
+    pendingCwdRestart = true;
+    child!.kill('SIGINT');
+  }
+}
+
 export function setModel(model: string): void {
   currentModel = model;
   log.info(`[claude-process] Model set to: ${model}`);
   if (isClaudeRunning()) {
     log.info('[claude-process] Interrupting Claude to restart with new model...');
+    pendingModelRestart = true;
     child!.kill('SIGINT');
   }
 }

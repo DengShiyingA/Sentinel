@@ -10,6 +10,7 @@ protocol TransportProtocol: AnyObject {
     var onTerminal: ((String) -> Void)? { get set }
     var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)? { get set }
     var onModel: ((String) -> Void)? { get set }
+    var onBrowseResult: ((BrowseResult) -> Void)? { get set }
 
     func connect() async throws
     func disconnect()

@@ -17,6 +17,7 @@ final class ApprovalStore {
 
     init(relay: RelayService) {
         self.relay = relay
+        self.decisionHistory = HistoryPersistence.load()
         setupRelay()
     }
 
@@ -44,6 +45,8 @@ final class ApprovalStore {
     var userMessages: [UserMessageEntry] = []
     /// Timestamp of last .stop event for session boundary tracking.
     private var lastStopTimestamp: Date?
+    /// Current session identifier — rotated on each Stop event.
+    private(set) var currentSessionId: String = UUID().uuidString
 
     /// Cached unified timeline — rebuilt only when underlying data changes.
     private(set) var timeline: [TimelineEntry] = []
@@ -189,7 +192,15 @@ final class ApprovalStore {
                 }
             }
         }
+        relay.onBrowseResult = { [weak self] result in
+            Task { @MainActor in
+                self?.browseResult = result
+            }
+        }
     }
+
+    /// Latest browse_result from Mac — observed by FileBrowserView.
+    var browseResult: BrowseResult?
 
     // MARK: - Terminal
 
@@ -238,6 +249,7 @@ final class ApprovalStore {
                 )
                 self.sessionSummaries.append(summary)
                 self.lastStopTimestamp = item.timestamp
+                self.currentSessionId = UUID().uuidString
 
                 // Mark any pending user messages as sent — CLI just resumed Claude
                 for i in self.userMessages.indices where self.userMessages[i].status == .pending {
@@ -282,14 +294,12 @@ final class ApprovalStore {
             self.rebuildTimeline()
             log.info("New request: \(request.id) tool=\(request.toolName)")
 
-            // Only push notification for high-risk (Face ID) requests
-            if request.riskLevel == .requireFaceID {
-                NotificationService.shared.postApprovalNotification(
-                    requestId: request.id,
-                    toolName: request.toolName,
-                    riskLevel: request.riskLevel
-                )
-            }
+            NotificationService.shared.postApprovalNotification(
+                requestId: request.id,
+                toolName: request.toolName,
+                body: ApprovalHelper.notificationBody(for: request),
+                riskLevel: request.riskLevel
+            )
 
             self.scheduleTimeout(for: request)
         }
@@ -302,12 +312,13 @@ final class ApprovalStore {
         Task { @MainActor in
             guard let req = self.pendingRequests.first(where: { $0.id == requestId }) else { return }
             self.decisionHistory.insert(
-                DecisionRecord(id: requestId, request: req, decision: decision, decidedAt: Date()),
+                DecisionRecord(id: requestId, request: req, decision: decision, decidedAt: Date(), sessionId: self.currentSessionId),
                 at: 0
             )
             if self.decisionHistory.count > SentinelConfig.maxHistoryItems {
                 self.decisionHistory.removeLast(self.decisionHistory.count - SentinelConfig.maxHistoryItems)
             }
+            HistoryPersistence.save(self.decisionHistory)
             self.removeRequest(id: requestId)
             self.resolvedCount += 1
 
@@ -360,9 +371,31 @@ final class ApprovalStore {
     }
 
     @MainActor
+    func clearHistory() {
+        decisionHistory.removeAll()
+        HistoryPersistence.save([])
+    }
+
+    @MainActor
     func clearTerminal() {
         terminalLines.removeAll()
         userMessages.removeAll()
+        rebuildTimeline()
+    }
+
+    /// Reset all live state when switching to a different terminal profile.
+    @MainActor
+    func resetForNewTerminal() {
+        pendingRequests.removeAll()
+        activityFeed.removeAll()
+        terminalLines.removeAll()
+        userMessages.removeAll()
+        sessionSummaries.removeAll()
+        pendingSuggestions.removeAll()
+        resolvedCount = 0
+        workspacePath = nil
+        workspaceHost = nil
+        currentModel = .sonnet
         rebuildTimeline()
     }
 
@@ -383,6 +416,15 @@ final class ApprovalStore {
     func sendSetModel(_ model: ClaudeModel) {
         currentModel = model
         relay.sendSetModel(model.rawValue)
+    }
+
+    func sendSetCwd(_ path: String) {
+        workspacePath = path
+        relay.sendSetCwd(path)
+    }
+
+    func sendBrowseDir(_ path: String) {
+        relay.sendBrowseDir(path)
     }
 
     // MARK: - Timeout

@@ -4,6 +4,19 @@ import OSLog
 
 private let log = Logger(subsystem: "com.sentinel.ios", category: "LocalTransport")
 
+struct BrowseItem: Identifiable, Equatable {
+    let id = UUID()
+    let name: String
+    let path: String
+}
+
+struct BrowseResult: Equatable {
+    let path: String
+    let parent: String?
+    let items: [BrowseItem]
+    let error: String?
+}
+
 final class LocalTransport: TransportProtocol {
     private let discovery: LocalDiscoveryService
 
@@ -13,6 +26,7 @@ final class LocalTransport: TransportProtocol {
     var onTerminal: ((String) -> Void)? { didSet { rebindListener() } }
     var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)? { didSet { rebindListener() } }
     var onModel: ((String) -> Void)? { didSet { rebindListener() } }
+    var onBrowseResult: ((BrowseResult) -> Void)? { didSet { rebindListener() } }
 
     init(discovery: LocalDiscoveryService) {
         self.discovery = discovery
@@ -50,6 +64,7 @@ final class LocalTransport: TransportProtocol {
         let onTerm = onTerminal
         let onWs = onWorkspaceInfo
         let onMod = onModel
+        let onBrowse = onBrowseResult
 
         discovery.onEvent = { event, data in
             switch event {
@@ -59,7 +74,6 @@ final class LocalTransport: TransportProtocol {
                     if version == "3", let x25519PubB64 = dict["x25519PublicKey"] as? String,
                        let pubKeyData = Data(base64Encoded: x25519PubB64),
                        pubKeyData.count == 32 {
-                        // V3: derive shared key via X25519 ECDH (no plaintext key exchange)
                         do {
                             let serverPubKey = try Curve25519.KeyAgreement.PublicKey(rawRepresentation: pubKeyData)
                             let ephemeral = Curve25519.KeyAgreement.PrivateKey()
@@ -74,14 +88,12 @@ final class LocalTransport: TransportProtocol {
                             log.info("Encryption key derived via X25519 ECDH (v3)")
                         } catch {
                             log.error("X25519 key agreement failed: \(error)")
-                            // Fall back to v2 ek if available
                             if let ek = dict["ek"] as? String {
                                 TransportEncryption.setKey(base64: ek)
                                 log.info("Fell back to v2 plaintext key")
                             }
                         }
                     } else if let ek = dict["ek"] as? String {
-                        // V2 fallback: plaintext key
                         TransportEncryption.setKey(base64: ek)
                         log.info("Encryption key received (v2 plaintext)")
                     }
@@ -135,6 +147,24 @@ final class LocalTransport: TransportProtocol {
                     if let modelId = dict["model"] as? String {
                         onMod?(modelId)
                     }
+                }
+
+            case "browse_result":
+                if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let path = dict["path"] as? String {
+                    let rawItems = dict["items"] as? [[String: Any]] ?? []
+                    let items = rawItems.compactMap { d -> BrowseItem? in
+                        guard let name = d["name"] as? String,
+                              let itemPath = d["path"] as? String else { return nil }
+                        return BrowseItem(name: name, path: itemPath)
+                    }
+                    let result = BrowseResult(
+                        path: path,
+                        parent: dict["parent"] as? String,
+                        items: items,
+                        error: dict["error"] as? String
+                    )
+                    onBrowse?(result)
                 }
 
             default:

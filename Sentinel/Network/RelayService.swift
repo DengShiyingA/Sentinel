@@ -8,6 +8,8 @@ final class RelayService {
     private(set) var currentMode: ConnectionMode
     private(set) var isConnected = false
     var connectionError: String?
+    /// Last IP discovered via Bonjour — reused for non-default-port terminals on the same Mac.
+    var discoveredHost: String? { local.discoveredHost }
 
     private var transport: TransportProtocol?
     private var connectTask: Task<Void, Never>?
@@ -23,6 +25,7 @@ final class RelayService {
     var onTerminal: ((String) -> Void)?
     var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)?
     var onModel: ((String) -> Void)?
+    var onBrowseResult: ((BrowseResult) -> Void)?
 
     init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
         self.socket = socket
@@ -70,6 +73,7 @@ final class RelayService {
         newTransport.onTerminal = onTerminal
         newTransport.onWorkspaceInfo = onWorkspaceInfo
         newTransport.onModel = onModel
+        newTransport.onBrowseResult = onBrowseResult
         transport = newTransport
 
         // Connect async
@@ -113,6 +117,7 @@ final class RelayService {
         localTransport.onActivity = onActivity
         localTransport.onDecisionSync = onDecisionSync
         localTransport.onTerminal = onTerminal
+        localTransport.onBrowseResult = onBrowseResult
         transport = localTransport
 
         local.connect(host: host, port: port)
@@ -180,21 +185,27 @@ final class RelayService {
     }
 
     func sendUserMessage(_ text: String) {
-        guard let local = local as? LocalDiscoveryService else { return }
         local.emit("user_message", dict: ["text": text])
         log.info("User message sent: \(text.prefix(50))")
     }
 
     func sendInterrupt() {
-        guard let local = local as? LocalDiscoveryService else { return }
         local.emit("interrupt", dict: [:])
         log.info("Interrupt sent to Mac")
     }
 
     func sendSetModel(_ modelId: String) {
-        guard let local = local as? LocalDiscoveryService else { return }
         local.emit("set_model", dict: ["model": modelId])
         log.info("Model change sent: \(modelId)")
+    }
+
+    func sendSetCwd(_ path: String) {
+        local.emit("set_cwd", dict: ["path": path])
+        log.info("Directory change sent: \(path)")
+    }
+
+    func sendBrowseDir(_ path: String) {
+        local.emit("browse_dir", dict: ["path": path])
     }
 
     func sendRulesUpdate(rules: [[String: Any]]) {

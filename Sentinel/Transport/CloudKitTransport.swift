@@ -15,6 +15,7 @@ final class CloudKitTransport: TransportProtocol {
     var onTerminal: ((String) -> Void)?
     var onWorkspaceInfo: ((_ cwd: String, _ hostname: String?) -> Void)?
     var onModel: ((String) -> Void)?
+    var onBrowseResult: ((BrowseResult) -> Void)?  // not supported in CloudKit mode
     private(set) var isConnected = false
     /// Bounded cache of processed request IDs to prevent unbounded memory growth.
     /// Stores the most recent 500 IDs using FIFO eviction.

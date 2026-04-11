@@ -3,6 +3,8 @@ dist/
 .env
 *.local
 .DS_Store
+.npmrc
+**/.npmrc
 
 # Xcode
 build/

@@ -10,7 +10,10 @@ import { log } from '../lib/logger';
 import { networkInterfaces } from 'os';
 import type { Rule } from '../rules/engine';
 import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
-import { interruptClaude, setModel, getCurrentModel } from '../lib/claude-process';
+import { readdirSync, statSync } from 'fs';
+import { dirname, join } from 'path';
+import { homedir } from 'os';
+import { interruptClaude, setModel, getCurrentModel, setCwd, getSpawnCwd } from '../lib/claude-process';
 
 const TCP_PORT = 7750;
 const SERVICE_TYPE = 'sentinel';
@@ -188,6 +191,33 @@ export class LocalTransport implements Transport {
       if (model) {
         log.info(`[local] Model change from iOS: ${model}`);
         setModel(model);
+      }
+    } else if (msg.event === 'set_cwd') {
+      const path = msg.data?.path as string | undefined;
+      if (path) {
+        log.info(`[local] Directory change from iOS: ${path}`);
+        setCwd(path);
+        // Notify iOS of updated workspace path
+        setTimeout(() => {
+          this.send('workspace_info', {
+            cwd: getSpawnCwd(),
+            hostname: require('os').hostname(),
+            model: getCurrentModel(),
+          });
+        }, 300);
+      }
+    } else if (msg.event === 'browse_dir') {
+      const reqPath = (msg.data?.path as string | undefined) || homedir();
+      try {
+        const entries = readdirSync(reqPath, { withFileTypes: true });
+        const items = entries
+          .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+          .map(e => ({ name: e.name, path: join(reqPath, e.name) }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+        const parent = dirname(reqPath) !== reqPath ? dirname(reqPath) : null;
+        this.send('browse_result', { path: reqPath, parent, items });
+      } catch {
+        this.send('browse_result', { path: reqPath, parent: null, items: [], error: '无法读取目录' });
       }
     } else if (msg.event === 'heartbeat_ack') {
       // iOS responded to heartbeat
