@@ -1,5 +1,5 @@
-// Simulator 测试：先在 Mac 运行 `sentinel start --mode local`
-// 然后在 App 设置页选择"局域网"模式，点"手动连接"输入 localhost:7750
+// Simulator 测试：先在 Mac 运行 `sentinel start`
+// 然后在【终端】标签点 + 添加一个终端并进入（自动 Bonjour 发现）
 
 import SwiftUI
 
@@ -7,7 +7,6 @@ import SwiftUI
 struct SentinelApp: App {
     @Environment(\.scenePhase) private var scenePhase
     @State private var pairing: PairingService
-    @State private var socket: SocketClient
     @State private var local: LocalDiscoveryService
     @State private var relay: RelayService
     @State private var store: ApprovalStore
@@ -15,13 +14,11 @@ struct SentinelApp: App {
 
     init() {
         let p = PairingService()
-        let s = SocketClient()
         let l = LocalDiscoveryService()
-        let r = RelayService(socket: s, local: l, pairing: p)
+        let r = RelayService(local: l)
         let a = ApprovalStore(relay: r)
 
         _pairing = State(initialValue: p)
-        _socket = State(initialValue: s)
         _local = State(initialValue: l)
         _relay = State(initialValue: r)
         _store = State(initialValue: a)
@@ -33,7 +30,6 @@ struct SentinelApp: App {
         WindowGroup {
             ContentView()
                 .environment(pairing)
-                .environment(socket)
                 .environment(local)
                 .environment(relay)
                 .environment(store)

@@ -1,132 +1,21 @@
 import SwiftUI
 
+/// Settings tab. Connection control (pairing, manual connect, mode switching)
+/// lives in TerminalListView + AddTerminalSheet — this view is a read-only
+/// dashboard plus links to rules / stats / trust manager.
 struct SettingsView: View {
-    @Environment(PairingService.self) private var pairing
-    @Environment(SocketClient.self) private var socket
     @Environment(LocalDiscoveryService.self) private var local
     @Environment(RelayService.self) private var relay
     @Environment(ApprovalStore.self) private var store
     @Environment(TrustManager.self) private var trustManager
 
-    @State private var showManualConnect = false
-    @State private var showQRScanner = false
-    @State private var connectionMode = ConnectionMode.current
-    @State private var manualHost = "localhost"
-    @State private var manualPort = "7750"
-
     var body: some View {
         NavigationStack {
             List {
-                // Mode picker
-                Section {
-                    Picker(String(localized: "连接模式"), selection: $connectionMode) {
-                        ForEach(ConnectionMode.allCases) { mode in
-                            Label(mode.label, systemImage: mode.systemImage).tag(mode)
-                        }
-                    }
-                    .onChange(of: connectionMode) { _, newMode in
-                        relay.switchMode(newMode)
-                    }
-                } footer: {
-                    Text(connectionMode.description)
-                }
+                connectionSection
 
-                // Connection
-                Section(String(localized: "连接")) {
-                    // Status row
-                    LabeledContent(String(localized: "状态")) {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(relay.isConnected ? .green : .red)
-                                .frame(width: 8, height: 8)
-                            Text(statusText).foregroundStyle(.secondary)
-                        }
-                    }
+                notificationPermissionWarning
 
-                    // Mode-specific info
-                    if connectionMode == .local {
-                        if let host = local.discoveredHost {
-                            LabeledContent(String(localized: "Mac")) {
-                                Text(host).font(.caption.monospaced()).foregroundStyle(.secondary)
-                            }
-                        }
-
-                        if local.isSearching {
-                            LabeledContent(String(localized: "搜索中")) {
-                                ProgressView()
-                            }
-                        }
-
-                        Button {
-                            showQRScanner = true
-                        } label: {
-                            Label(String(localized: "扫码连接"), systemImage: "qrcode.viewfinder")
-                        }
-
-                        Button {
-                            showManualConnect = true
-                        } label: {
-                            Label(String(localized: "手动连接"), systemImage: "network")
-                        }
-                    }
-
-                    if connectionMode == .cloudkit {
-                        LabeledContent(String(localized: "同步")) {
-                            Text("iCloud").foregroundStyle(.secondary)
-                        }
-                    }
-
-                    if let error = relay.connectionError {
-                        HStack {
-                            LabeledContent(String(localized: "错误")) {
-                                Text(error).font(.caption).foregroundStyle(.red)
-                            }
-                            Spacer()
-                            Button {
-                                relay.switchMode(connectionMode)
-                            } label: {
-                                Label(String(localized: "重试"), systemImage: "arrow.clockwise")
-                                    .font(.caption)
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-
-                    // Disconnect button (only when connected)
-                    if relay.isConnected {
-                        Button(role: .destructive) {
-                            relay.disconnect()
-                        } label: {
-                            Label(String(localized: "断开连接"), systemImage: "wifi.slash")
-                        }
-                    }
-                }
-
-                // Notification permission warning
-                if NotificationService.shared.permissionChecked && !NotificationService.shared.isPermissionGranted {
-                    Section {
-                        Label {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(String(localized: "通知权限未开启"))
-                                    .font(.subheadline)
-                                Text(String(localized: "审批请求将只在 App 内显示，后台时可能错过重要操作"))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } icon: {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .foregroundStyle(.orange)
-                        }
-                        Button(String(localized: "前往系统设置")) {
-                            if let url = URL(string: UIApplication.openSettingsURLString) {
-                                UIApplication.shared.open(url)
-                            }
-                        }
-                    }
-                }
-
-                // Rules
                 Section {
                     NavigationLink {
                         RulesView()
@@ -136,185 +25,212 @@ struct SettingsView: View {
                 }
 
                 if !trustManager.activeTrusts.isEmpty {
-                    Section {
-                        ForEach(trustManager.activeTrusts) { entry in
-                            HStack(spacing: 12) {
-                                Image(systemName: entry.isSessionOnly ? "infinity" : "clock.badge.checkmark")
-                                    .font(.body)
-                                    .foregroundStyle(.green)
-                                    .frame(width: 28)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.toolName)
-                                        .font(.subheadline.weight(.medium))
-                                    if let pattern = entry.pathPattern {
-                                        Text(pattern)
-                                            .font(.caption2.monospaced())
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-
-                                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                                    Text(entry.remainingText)
-                                        .font(.caption.monospacedDigit())
-                                        .foregroundStyle(entry.remainingSeconds < 60 && !entry.isSessionOnly ? .orange : .secondary)
-                                }
-                            }
-                            .swipeActions {
-                                Button(role: .destructive) {
-                                    withAnimation(Theme.springAnimation) { trustManager.revoke(id: entry.id) }
-                                } label: {
-                                    Label(String(localized: "撤销"), systemImage: "xmark.circle")
-                                }
-                            }
-                        }
-                        Button(role: .destructive) {
-                            withAnimation(Theme.springAnimation) { trustManager.revokeAll() }
-                        } label: {
-                            Label(String(localized: "撤销全部信任"), systemImage: "xmark.shield")
-                        }
-                    } header: {
-                        Label(String(localized: "临时信任"), systemImage: "clock.badge.checkmark")
-                    } footer: {
-                        Text(String(localized: "信任期内的工具请求将自动允许，无需手动审批"))
-                    }
+                    trustSection
                 }
 
-                Section {
-                    HStack {
-                        Label("今日调用", systemImage: "chart.bar.fill")
-                        Spacer()
-                        Text("\(store.todayCallCount) 次")
-                            .foregroundStyle(.secondary)
-                    }
+                usageSection
 
-                    HStack {
-                        Label("重置时间", systemImage: "clock.arrow.circlepath")
-                        Spacer()
-                        Text(nextMidnightText)
-                            .foregroundStyle(.secondary)
-                    }
+                statisticsSection
 
-                    HStack {
-                        Label("当前模型", systemImage: "cpu")
-                        Spacer()
-                        Text(store.currentModel.displayName)
-                            .foregroundStyle(store.currentModel.color)
-                    }
-                } header: {
-                    Text("使用情况")
-                }
-
-                Section(String(localized: "统计")) {
-                    NavigationLink {
-                        StatisticsView()
-                    } label: {
-                        HStack {
-                            Label(String(localized: "统计仪表盘"), systemImage: "chart.bar")
-                            Spacer()
-                            Text("\(store.resolvedCount)")
-                                .font(.subheadline.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                // About
-                Section(String(localized: "关于")) {
-                    LabeledContent(String(localized: "版本")) {
-                        Text(appVersion).foregroundStyle(.secondary)
-                    }
-                    LabeledContent("Sentinel") {
-                        Text("Claude Code Rule Engine")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
+                aboutSection
             }
             .listStyle(.insetGrouped)
             .navigationTitle(String(localized: "设置"))
-            .alert(String(localized: "手动连接"), isPresented: $showManualConnect) {
-                TextField(String(localized: "主机地址"), text: $manualHost)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                TextField(String(localized: "端口"), text: $manualPort)
-                    .keyboardType(.numberPad)
-                Button(String(localized: "取消"), role: .cancel) {}
-                Button(String(localized: "连接")) {
-                    guard let portNum = UInt16(manualPort), portNum > 0 else {
-                        relay.connectionError = String(localized: "端口无效，请输入 1-65535")
-                        return
-                    }
-                    relay.connectManual(host: manualHost, port: portNum)
+        }
+    }
+
+    // MARK: - Sections
+
+    private var connectionSection: some View {
+        Section {
+            LabeledContent(String(localized: "状态")) {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(relay.isConnected ? .green : .red)
+                        .frame(width: 8, height: 8)
+                    Text(relay.isConnected
+                         ? String(localized: "已连接")
+                         : String(localized: "未连接"))
+                        .foregroundStyle(.secondary)
                 }
-            } message: {
-                Text(String(localized: "Simulator 测试请输入 localhost:7750"))
             }
-            .sheet(isPresented: $showQRScanner) {
-                NavigationStack {
-                    QRScannerView { code in
-                        showQRScanner = false
-                        handleQRCode(code)
+
+            if let host = local.discoveredHost {
+                LabeledContent(String(localized: "当前 Mac")) {
+                    Text(host)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            if let error = relay.connectionError {
+                LabeledContent(String(localized: "错误")) {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+
+            if relay.isConnected {
+                Button(role: .destructive) {
+                    relay.disconnect()
+                } label: {
+                    Label(String(localized: "断开连接"), systemImage: "wifi.slash")
+                }
+            }
+        } header: {
+            Text(String(localized: "连接"))
+        } footer: {
+            Text(String(localized: "连接由终端列表中的 profile 管理。在【终端】标签添加或切换连接。"))
+        }
+    }
+
+    @ViewBuilder
+    private var notificationPermissionWarning: some View {
+        if NotificationService.shared.permissionChecked && !NotificationService.shared.isPermissionGranted {
+            Section {
+                Label {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(String(localized: "通知权限未开启"))
+                            .font(.subheadline)
+                        Text(String(localized: "审批请求将只在 App 内显示，后台时可能错过重要操作"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .navigationTitle(String(localized: "扫码连接"))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button(String(localized: "取消")) { showQRScanner = false }
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+                Button(String(localized: "前往系统设置")) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+            }
+        }
+    }
+
+    private var trustSection: some View {
+        Section {
+            ForEach(trustManager.activeTrusts) { entry in
+                HStack(spacing: 12) {
+                    Image(systemName: entry.isSessionOnly ? "infinity" : "clock.badge.checkmark")
+                        .font(.body)
+                        .foregroundStyle(.green)
+                        .frame(width: 28)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.toolName)
+                            .font(.subheadline.weight(.medium))
+                        if let pattern = entry.pathPattern {
+                            Text(pattern)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
                         }
                     }
+
+                    Spacer()
+
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(entry.remainingText)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(entry.remainingSeconds < 60 && !entry.isSessionOnly ? .orange : .secondary)
+                    }
+                }
+                .swipeActions {
+                    Button(role: .destructive) {
+                        withAnimation(Theme.springAnimation) { trustManager.revoke(id: entry.id) }
+                    } label: {
+                        Label(String(localized: "撤销"), systemImage: "xmark.circle")
+                    }
+                }
+            }
+            Button(role: .destructive) {
+                withAnimation(Theme.springAnimation) { trustManager.revokeAll() }
+            } label: {
+                Label(String(localized: "撤销全部信任"), systemImage: "xmark.shield")
+            }
+        } header: {
+            Label(String(localized: "临时信任"), systemImage: "clock.badge.checkmark")
+        } footer: {
+            Text(String(localized: "信任期内的工具请求将自动允许，无需手动审批"))
+        }
+    }
+
+    private var usageSection: some View {
+        Section {
+            HStack {
+                Label(String(localized: "今日调用"), systemImage: "chart.bar.fill")
+                Spacer()
+                Text(String(localized: "\(store.todayCallCount) 次"))
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Label(String(localized: "重置时间"), systemImage: "clock.arrow.circlepath")
+                Spacer()
+                Text(nextMidnightText)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Label(String(localized: "当前模型"), systemImage: "cpu")
+                Spacer()
+                Text(store.currentModel.displayName)
+                    .foregroundStyle(store.currentModel.color)
+            }
+        } header: {
+            Text(String(localized: "使用情况"))
+        }
+    }
+
+    private var statisticsSection: some View {
+        Section(String(localized: "统计")) {
+            NavigationLink {
+                StatisticsView()
+            } label: {
+                HStack {
+                    Label(String(localized: "统计仪表盘"), systemImage: "chart.bar")
+                    Spacer()
+                    Text("\(store.resolvedCount)")
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(.secondary)
                 }
             }
         }
     }
 
-    private func handleQRCode(_ code: String) {
-        if code.hasPrefix("sentinel://") {
-            let address = String(code.dropFirst("sentinel://".count))
-            let parts = address.split(separator: ":")
-            guard parts.count == 2, let port = UInt16(parts[1]) else {
-                relay.connectionError = String(localized: "二维码格式错误")
-                return
+    private var aboutSection: some View {
+        Section(String(localized: "关于")) {
+            LabeledContent(String(localized: "版本")) {
+                Text(appVersion).foregroundStyle(.secondary)
             }
-            Haptic.allow()
-            connectionMode = .local
-            relay.connectManual(host: String(parts[0]), port: port)
-        } else if code.hasPrefix("sentinel-remote://") {
-            let host = String(code.dropFirst("sentinel-remote://".count))
-            Haptic.allow()
-            connectionMode = .local
-            relay.connectManual(host: host, port: 443)
-        } else {
-            relay.connectionError = String(localized: "无效的二维码")
+            LabeledContent("Sentinel") {
+                Text("Claude Code Rule Engine")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
         }
     }
 
-    private var statusText: String {
-        let mode = connectionMode.label
-        if relay.isConnected {
-            return "\(mode) · \(String(localized: "已连接"))"
-        } else {
-            return "\(mode) · \(String(localized: "未连接"))"
-        }
-    }
+    // MARK: - Computed
 
     private var nextMidnightText: String {
         let cal = Calendar.current
-        guard let midnight = cal.nextDate(after: Date(), matching: DateComponents(hour: 0, minute: 0, second: 0), matchingPolicy: .nextTime) else {
-            return "明天 00:00"
+        guard let tomorrow = cal.date(byAdding: .day, value: 1, to: .now),
+              let midnight = cal.date(bySettingHour: 0, minute: 0, second: 0, of: tomorrow) else {
+            return "--"
         }
-        if cal.isDateInTomorrow(midnight) {
-            return "明天 00:00"
-        }
-        let hours = Int(midnight.timeIntervalSinceNow / 3600)
-        let minutes = Int((midnight.timeIntervalSinceNow.truncatingRemainder(dividingBy: 3600)) / 60)
-        return String(format: "%d小时%d分后重置", hours, minutes)
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: midnight, relativeTo: .now)
     }
 
     private var appVersion: String {
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-        return "\(version) (\(build))"
+        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        return "\(short) (\(build))"
     }
 }

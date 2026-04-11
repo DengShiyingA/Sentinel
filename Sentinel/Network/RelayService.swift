@@ -15,9 +15,7 @@ final class RelayService {
     private var connectTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
 
-    private let socket: SocketClient
     private let local: LocalDiscoveryService
-    private let pairing: PairingService
 
     var onRequest: ((ApprovalRequest) -> Void)?
     var onActivity: ((ActivityItem) -> Void)?
@@ -27,10 +25,8 @@ final class RelayService {
     var onModel: ((String) -> Void)?
     var onBrowseResult: ((BrowseResult) -> Void)?
 
-    init(socket: SocketClient, local: LocalDiscoveryService, pairing: PairingService) {
-        self.socket = socket
+    init(local: LocalDiscoveryService) {
         self.local = local
-        self.pairing = pairing
         self.currentMode = ConnectionMode.current
     }
 
@@ -64,9 +60,7 @@ final class RelayService {
         // Create new transport
         let newTransport = TransportFactory.makeTransport(
             mode: mode,
-            socket: socket,
-            local: local,
-            pairing: pairing
+            local: local
         )
         newTransport.onRequest = onRequest
         newTransport.onActivity = onActivity
