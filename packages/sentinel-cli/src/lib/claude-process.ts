@@ -106,13 +106,15 @@ function spawnClaude(args: string[]): void {
 
       // Give up after 5 rapid-fire exits (prevents infinite loop when
       // `--continue` targets a stale/missing session that always fails).
+      // IMPORTANT: stop restarting Claude but keep sentinel alive so iOS can
+      // still connect — killing the whole process would also tear down the
+      // WebSocket server + Cloudflare tunnel + hook server.
       if (restartCount >= 5) {
         log.error(
-          `[claude-process] Claude crashed ${restartCount} times in a row. Aborting restart loop.`,
+          `[claude-process] Claude crashed ${restartCount} times in a row. Giving up on restart.`,
         );
-        log.warn('[claude-process] Run `sentinel run` again to retry with a fresh session.');
-        shuttingDown = true;
-        setTimeout(() => process.exit(1), 100);
+        log.warn('[claude-process] Sentinel will keep running. Launch Claude manually or restart sentinel to retry.');
+        restartCount = 0; // reset so a future manual startClaude() call can retry
         return;
       }
 
