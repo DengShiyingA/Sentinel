@@ -294,12 +294,17 @@ final class ApprovalStore {
             self.rebuildTimeline()
             log.info("New request: \(request.id) tool=\(request.toolName)")
 
+            let body = ApprovalHelper.notificationBody(for: request)
             NotificationService.shared.postApprovalNotification(
                 requestId: request.id,
                 toolName: request.toolName,
-                body: ApprovalHelper.notificationBody(for: request),
+                body: body,
                 riskLevel: request.riskLevel
             )
+
+            // Start a Live Activity so the lock screen / Dynamic Island shows
+            // the request with inline allow/deny buttons.
+            ApprovalLiveActivity.shared.start(for: request, summary: body)
 
             self.scheduleTimeout(for: request)
         }
@@ -309,6 +314,13 @@ final class ApprovalStore {
         timeoutTasks[requestId]?.cancel()
         timeoutTasks.removeValue(forKey: requestId)
         relay.sendDecision(requestId: requestId, decision: decision)
+
+        // End the Live Activity (if any) with the final phase.
+        ApprovalLiveActivity.shared.end(
+            requestId: requestId,
+            phase: decision == .allowed ? .approved : .denied
+        )
+
         Task { @MainActor in
             guard let req = self.pendingRequests.first(where: { $0.id == requestId }) else { return }
             self.decisionHistory.insert(
@@ -459,7 +471,23 @@ final class ApprovalStore {
         resolvedCount += 1
         // Notify transport that request expired (treated as timeout on CLI side)
         relay.sendDecision(requestId: id, decision: .blocked)
+        // End Live Activity with timeout phase
+        ApprovalLiveActivity.shared.end(requestId: id, phase: .timeout)
         log.info("Request expired: \(id)")
+    }
+
+    /// Drain decisions queued by LiveActivity AppIntents (from lock-screen taps)
+    /// and dispatch them over the real transport. Called on app launch and in
+    /// response to a Darwin notification.
+    @MainActor
+    func drainPendingLiveActivityDecisions() {
+        let entries = PendingDecisionQueue.drain()
+        guard !entries.isEmpty else { return }
+        log.info("Draining \(entries.count) queued live activity decisions")
+        for entry in entries {
+            let decision: Decision = entry.decision == "allowed" ? .allowed : .blocked
+            sendDecision(requestId: entry.requestId, decision: decision)
+        }
     }
 
     @MainActor
