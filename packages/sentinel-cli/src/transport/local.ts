@@ -1,9 +1,10 @@
-import net from 'net';
+import http from 'http';
 import { randomBytes } from 'crypto';
 import { spawn as cpSpawn } from 'child_process';
 import nacl from 'tweetnacl';
 import { encodeBase64 } from 'tweetnacl-util';
 import { Bonjour } from 'bonjour-service';
+import { WebSocketServer, WebSocket } from 'ws';
 import type { Transport, ApprovalPayload } from './interface';
 import { pending } from '../relay/pending';
 import { log } from '../lib/logger';
@@ -20,19 +21,21 @@ const SERVICE_TYPE = 'sentinel';
 const PROTOCOL = 'tcp';
 
 /**
- * Local transport — TCP server + Bonjour (mDNS) for LAN-direct mode.
+ * Local transport — WebSocket server + Bonjour (mDNS) for LAN-direct mode.
  *
- * - Opens a TCP server on port 7750
+ * - Opens an HTTP server on port 7750 with an attached WebSocket server
  * - Publishes _sentinel._tcp via Bonjour so iOS can auto-discover
- * - iOS connects directly, same JSON message format as remote mode
- * - Messages are newline-delimited JSON over raw TCP
+ * - iOS connects via WebSocket, same JSON message format as before
+ * - Messages are newline-delimited JSON frames over WebSocket
+ * - HTTP base layer allows cloudflared to proxy http://localhost:7750 for remote access
  */
 export class LocalTransport implements Transport {
   readonly mode = 'local' as const;
 
-  private server: net.Server | null = null;
+  private httpServer: http.Server | null = null;
+  private wss: WebSocketServer | null = null;
   private bonjour: Bonjour | null = null;
-  private iosSocket: net.Socket | null = null;
+  private iosSocket: WebSocket | null = null;
   private buffer = '';
   private static readonly MAX_BUFFER_SIZE = 1_048_576; // 1 MB
   private decisionCb: ((id: string, action: 'allowed' | 'blocked' | 'timeout') => void) | null = null;
@@ -41,21 +44,29 @@ export class LocalTransport implements Transport {
   private activeClaudeProcess: import('child_process').ChildProcess | null = null;
 
   get isConnected(): boolean {
-    return this.iosSocket !== null && !this.iosSocket.destroyed;
+    return this.iosSocket !== null && this.iosSocket.readyState === WebSocket.OPEN;
   }
 
   async start(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server = net.createServer((socket) => {
+      this.httpServer = http.createServer((req, res) => {
+        // Simple health endpoint; actual traffic is WebSocket upgrade
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('sentinel');
+      });
+
+      this.wss = new WebSocketServer({ server: this.httpServer });
+
+      this.wss.on('connection', (ws, req) => {
         // Accept one iOS connection at a time
-        if (this.iosSocket && !this.iosSocket.destroyed) {
+        if (this.iosSocket && this.iosSocket.readyState === WebSocket.OPEN) {
           log.warn('[local] New connection replacing old one');
-          this.iosSocket.destroy();
+          try { this.iosSocket.close(); } catch {}
         }
 
-        this.iosSocket = socket;
+        this.iosSocket = ws;
         this.buffer = '';
-        log.success(`[local] iOS connected from ${socket.remoteAddress}`);
+        log.success(`[local] iOS connected from ${req.socket.remoteAddress}`);
 
         // Send handshake with X25519 ephemeral public key for key agreement.
         // The transport key is derived: HMAC-SHA256(sharedSecret, "sentinel-transport-v2").
@@ -70,11 +81,11 @@ export class LocalTransport implements Transport {
             ek: getTransportKeyBase64(),
           },
         }) + '\n';
-        socket.write(handshake);
+        ws.send(handshake);
 
         // Store ephemeral secret key for this connection to derive shared key
         // when iOS responds with its public key
-        (socket as any)._ephemeralSecretKey = ephemeral.secretKey;
+        (ws as any)._ephemeralSecretKey = ephemeral.secretKey;
 
         setTimeout(() => {
           this.send('workspace_info', {
@@ -84,41 +95,48 @@ export class LocalTransport implements Transport {
           });
         }, 500);
 
-        socket.on('data', (chunk) => {
-          this.buffer += chunk.toString();
+        ws.on('message', (data) => {
+          this.buffer += data.toString('utf-8');
           if (this.buffer.length > LocalTransport.MAX_BUFFER_SIZE) {
             log.error('[local] Buffer exceeded 1MB, dropping connection');
             this.buffer = '';
-            socket.destroy();
+            try { ws.close(); } catch {}
             return;
           }
           this.processBuffer();
         });
 
-        socket.on('close', () => {
+        ws.on('close', () => {
           log.warn('[local] iOS disconnected');
           // Clear ephemeral key material
-          if ((socket as any)._ephemeralSecretKey) {
-            (socket as any)._ephemeralSecretKey = null;
+          if ((ws as any)._ephemeralSecretKey) {
+            (ws as any)._ephemeralSecretKey = null;
           }
-          if (this.iosSocket === socket) this.iosSocket = null;
+          if (this.iosSocket === ws) this.iosSocket = null;
         });
 
-        socket.on('error', (err) => {
+        ws.on('error', (err) => {
           log.error(`[local] Socket error: ${err.message}`);
-          if (this.iosSocket === socket) this.iosSocket = null;
+          if ((ws as any)._ephemeralSecretKey) {
+            (ws as any)._ephemeralSecretKey = null;
+          }
+          if (this.iosSocket === ws) this.iosSocket = null;
         });
       });
 
-      this.server.listen(TCP_PORT, () => {
-        log.success(`[local] TCP server listening on port ${TCP_PORT}`);
-        this.publishBonjour();
-        resolve();
+      this.wss.on('error', (err) => {
+        log.error(`[local] WebSocket server error: ${err.message}`);
       });
 
-      this.server.on('error', (err) => {
+      this.httpServer.once('error', (err) => {
         log.error(`[local] Server error: ${err.message}`);
         reject(err);
+      });
+
+      this.httpServer.listen(TCP_PORT, () => {
+        log.success(`[local] WebSocket server listening on port ${TCP_PORT}`);
+        this.publishBonjour();
+        resolve();
       });
     });
   }
@@ -130,7 +148,7 @@ export class LocalTransport implements Transport {
       type: SERVICE_TYPE,
       protocol: PROTOCOL,
       port: TCP_PORT,
-      txt: { version: '2', ek: getTransportKeyBase64() }, // ek = encryption key
+      txt: { version: '3', protocol: 'ws', ek: getTransportKeyBase64() }, // ek = encryption key
     });
     log.success(`[local] Bonjour: publishing _${SERVICE_TYPE}._${PROTOCOL}`);
 
@@ -304,9 +322,9 @@ export class LocalTransport implements Transport {
 
   /** Send a JSON message to connected iOS */
   private send(event: string, data: any): void {
-    if (!this.iosSocket || this.iosSocket.destroyed) return;
+    if (!this.iosSocket || this.iosSocket.readyState !== WebSocket.OPEN) return;
     const msg = JSON.stringify({ event, data }) + '\n';
-    this.iosSocket.write(msg);
+    this.iosSocket.send(msg);
   }
 
   async sendApprovalRequest(payload: ApprovalPayload): Promise<string> {
@@ -354,10 +372,12 @@ export class LocalTransport implements Transport {
       this.activeClaudeProcess.kill('SIGTERM');
       this.activeClaudeProcess = null;
     }
-    this.iosSocket?.destroy();
+    try { this.iosSocket?.close(); } catch {}
     this.iosSocket = null;
-    this.server?.close();
-    this.server = null;
+    try { this.wss?.close(); } catch {}
+    this.wss = null;
+    try { this.httpServer?.close(); } catch {}
+    this.httpServer = null;
     if (this.bonjour) {
       this.bonjour.unpublishAll();
       this.bonjour.destroy();
