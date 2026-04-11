@@ -248,12 +248,16 @@ final class ApprovalStore {
 
             // Session summary for stop events
             if item.type == .stop {
+                let sessionStartedAt = self.lastStopTimestamp ?? item.timestamp
                 let summary = SessionSummaryBuilder.build(
                     history: self.decisionHistory,
                     since: self.lastStopTimestamp,
                     stopItem: item
                 )
                 self.sessionSummaries.append(summary)
+                if self.sessionSummaries.count > SentinelConfig.maxSessionSummaries {
+                    self.sessionSummaries.removeFirst(self.sessionSummaries.count - SentinelConfig.maxSessionSummaries)
+                }
                 self.lastStopTimestamp = item.timestamp
                 self.currentSessionId = UUID().uuidString
 
@@ -267,9 +271,11 @@ final class ApprovalStore {
                     body: summary.displaySubtitle
                 )
 
+                // Capture startedAt from BEFORE we overwrote lastStopTimestamp,
+                // otherwise startedAt would equal endedAt for every session.
                 SessionRecord.append(SessionRecord(
                     id: summary.id,
-                    startedAt: self.lastStopTimestamp ?? summary.timestamp,
+                    startedAt: sessionStartedAt,
                     endedAt: summary.timestamp,
                     summary: item.summary,
                     filesModified: summary.filesModified,
@@ -440,6 +446,9 @@ final class ApprovalStore {
         var entry = UserMessageEntry(text: text)
         entry.status = .sent
         userMessages.append(entry)
+        if userMessages.count > SentinelConfig.maxUserMessages {
+            userMessages.removeFirst(userMessages.count - SentinelConfig.maxUserMessages)
+        }
         relay.sendUserMessage(text)
         rebuildTimeline()
     }

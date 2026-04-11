@@ -1,6 +1,6 @@
 {
   "name": "@two7722/sentinel-guard",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "Sentinel CLI — Claude Code 本地 Hook 服务 + 移动端审批",
   "main": "dist/cli/index.js",
   "bin": {

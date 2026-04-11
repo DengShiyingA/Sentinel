@@ -5,6 +5,7 @@ import SwiftUI
 
 @main
 struct SentinelApp: App {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var pairing: PairingService
     @State private var socket: SocketClient
     @State private var local: LocalDiscoveryService
@@ -49,6 +50,20 @@ struct SentinelApp: App {
                     // taps from the lock screen wake the main app to dispatch them.
                     store.drainPendingLiveActivityDecisions()
                     LiveActivityDecisionObserver.install(store: store)
+
+                    // Refresh notification permission status so the UI reflects
+                    // any changes the user made in Settings while the app was closed.
+                    NotificationService.shared.refreshPermissionStatus()
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .active {
+                        // Drain any decisions queued while we were backgrounded.
+                        // The Darwin observer usually handles this in real time
+                        // but we run this belt-and-braces pass on every foreground
+                        // transition in case the OS suspended the notifyd delivery.
+                        store.drainPendingLiveActivityDecisions()
+                        NotificationService.shared.refreshPermissionStatus()
+                    }
                 }
         }
     }

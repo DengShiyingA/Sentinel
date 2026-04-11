@@ -12,7 +12,7 @@ import { networkInterfaces } from 'os';
 import type { Rule } from '../rules/engine';
 import { getTransportKey, getTransportKeyBase64, encryptMessage, decryptMessage } from '../crypto/transport-encryption';
 import { readdirSync, statSync } from 'fs';
-import { dirname, join } from 'path';
+import { dirname, join, resolve as pathResolve } from 'path';
 import stripAnsi from 'strip-ansi';
 import { homedir } from 'os';
 import { interruptClaude, setModel, getCurrentModel, setCwd, getSpawnCwd } from '../lib/claude-process';
@@ -226,13 +226,20 @@ export class LocalTransport implements Transport {
         }, 300);
       }
     } else if (msg.event === 'browse_dir') {
-      const reqPath = (msg.data?.path as string | undefined) || homedir();
+      const rawPath = (msg.data?.path as string | undefined) || homedir();
+      // Normalize to an absolute, canonical path. This collapses `..` and
+      // relative segments so the browser can't end up with ugly mixed paths.
+      const reqPath = pathResolve(rawPath);
       try {
         const entries = readdirSync(reqPath, { withFileTypes: true });
+        // Cap at 500 entries to keep responses bounded for big dirs like
+        // /usr/bin or node_modules.
+        const MAX_ITEMS = 500;
         const items = entries
-          .filter(e => e.isDirectory() && !e.name.startsWith('.'))
-          .map(e => ({ name: e.name, path: join(reqPath, e.name) }))
-          .sort((a, b) => a.name.localeCompare(b.name));
+          .filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .slice(0, MAX_ITEMS)
+          .map((e) => ({ name: e.name, path: join(reqPath, e.name) }));
         const parent = dirname(reqPath) !== reqPath ? dirname(reqPath) : null;
         this.send('browse_result', { path: reqPath, parent, items });
       } catch {
