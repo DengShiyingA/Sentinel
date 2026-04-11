@@ -72,7 +72,7 @@ final class CloudKitTransport: TransportProtocol {
         log.info("Rules sync not supported in CloudKit mode")
     }
 
-    func sendDecision(requestId: String, decision: Decision) async throws {
+    func sendDecision(requestId: String, decision: Decision, modifiedInput: [String: Any]?) async throws {
         guard let database else { throw TransportError.iCloudUnavailable }
 
         let record = CKRecord(recordType: "Decision")
@@ -80,6 +80,14 @@ final class CloudKitTransport: TransportProtocol {
         record["action"] = (decision == .allowed ? "allow" : "block") as CKRecordValue
         record["status"] = "new" as CKRecordValue
         record["timestamp"] = Date() as CKRecordValue
+        // Edited-input approval over CloudKit: serialize as JSON string so CKRecord
+        // can store it. Most CloudKit users won't exercise this path (edit-with-allow
+        // is primarily a LAN/tunnel feature), but we still carry it for completeness.
+        if let modifiedInput, !modifiedInput.isEmpty,
+           let data = try? JSONSerialization.data(withJSONObject: modifiedInput),
+           let json = String(data: data, encoding: .utf8) {
+            record["modifiedInput"] = json as CKRecordValue
+        }
 
         try await database.save(record)
     }

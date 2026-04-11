@@ -44,11 +44,15 @@ final class LocalTransport: TransportProtocol {
         discovery.stopDiscovery()
     }
 
-    func sendDecision(requestId: String, decision: Decision) async throws {
-        discovery.emit("decision", dict: [
+    func sendDecision(requestId: String, decision: Decision, modifiedInput: [String: Any]?) async throws {
+        var dict: [String: Any] = [
             "requestId": requestId,
             "action": decision.rawValue,
-        ])
+        ]
+        if let modifiedInput, !modifiedInput.isEmpty {
+            dict["modifiedInput"] = modifiedInput
+        }
+        discovery.emit("decision", dict: dict)
     }
 
     func sendRulesUpdate(rules: [[String: Any]]) async throws {

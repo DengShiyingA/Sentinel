@@ -333,10 +333,18 @@ final class ApprovalStore {
         }
     }
 
-    func sendDecision(requestId: String, decision: Decision) {
+    /// Send a user decision to the CLI. `modifiedInput`, when set, is forwarded
+    /// as `modifiedInput` on the wire and the CLI hook handler returns it as
+    /// `updatedInput` to Claude Code so the tool runs with the edited args
+    /// instead of the original. Only valid with `decision == .allowed`.
+    func sendDecision(requestId: String, decision: Decision, modifiedInput: [String: Any]? = nil) {
         timeoutTasks[requestId]?.cancel()
         timeoutTasks.removeValue(forKey: requestId)
-        relay.sendDecision(requestId: requestId, decision: decision)
+        relay.sendDecision(
+            requestId: requestId,
+            decision: decision,
+            modifiedInput: decision == .allowed ? modifiedInput : nil
+        )
 
         // End the Live Activity (if any) with the final phase.
         ApprovalLiveActivity.shared.end(

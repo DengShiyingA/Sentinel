@@ -14,6 +14,9 @@ protocol TransportProtocol: AnyObject {
 
     func connect() async throws
     func disconnect()
-    func sendDecision(requestId: String, decision: Decision) async throws
+    /// Send a decision for a pending approval. `modifiedInput`, when non-nil,
+    /// is serialized as `modifiedInput` on the wire so the CLI hook handler
+    /// returns it as `updatedInput` to Claude Code.
+    func sendDecision(requestId: String, decision: Decision, modifiedInput: [String: Any]?) async throws
     func sendRulesUpdate(rules: [[String: Any]]) async throws
 }

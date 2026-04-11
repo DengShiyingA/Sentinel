@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		98B46C5A3F4E39026CA424F7 /* .appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 263B1F41616F4C15464FD17D /* .appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		98B46C5A3F4E39026CA424F7 /* SentinelWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 263B1F41616F4C15464FD17D /* SentinelWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FBA2A2D0D3653D22AA4EBF99 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5591B0BC039A5A7628C2B5E2 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
@@ -28,7 +28,7 @@
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				98B46C5A3F4E39026CA424F7 /* .appex in Embed Foundation Extensions */,
+				98B46C5A3F4E39026CA424F7 /* SentinelWidgetExtension.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -36,7 +36,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		263B1F41616F4C15464FD17D /* .appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = .appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		263B1F41616F4C15464FD17D /* SentinelWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SentinelWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5591B0BC039A5A7628C2B5E2 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		E9B58B5F2F860F1C0084A341 /* Sentinel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sentinel.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -57,8 +57,6 @@
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		24EE729BA6132610E4F08DBA /* SentinelWidgetExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = SentinelWidgetExtension;
 			sourceTree = "<group>";
 		};
@@ -121,7 +119,7 @@
 			isa = PBXGroup;
 			children = (
 				E9B58B5F2F860F1C0084A341 /* Sentinel.app */,
-				263B1F41616F4C15464FD17D /* .appex */,
+				263B1F41616F4C15464FD17D /* SentinelWidgetExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -146,7 +144,7 @@
 			);
 			name = SentinelWidgetExtension;
 			productName = SentinelWidgetExtension;
-			productReference = 263B1F41616F4C15464FD17D /* .appex */;
+			productReference = 263B1F41616F4C15464FD17D /* SentinelWidgetExtension.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 		E9B58B5E2F860F1C0084A341 /* Sentinel */ = {

@@ -78,6 +78,34 @@ export function createHttpServer(port: number = 7749): express.Application {
   const app = express();
   app.use(express.json({ limit: '512kb' }));
 
+  // ==================== Hook response helpers ====================
+  //
+  // Claude Code's canonical hook response shape (v1.x+):
+  //   { hookSpecificOutput: {
+  //       hookEventName: "PreToolUse",
+  //       permissionDecision: "allow" | "deny" | "ask",
+  //       permissionDecisionReason?: string,
+  //       updatedInput?: Record<string, unknown>
+  //   }}
+  //
+  // updatedInput replaces the tool's original input before Claude executes
+  // the tool, enabling the "allow-with-edit" UX from iPhone.
+  type HookResp = Record<string, unknown>;
+  const hookAllow = (updatedInput?: Record<string, unknown>): HookResp => ({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'allow',
+      ...(updatedInput ? { updatedInput } : {}),
+    },
+  });
+  const hookDeny = (reason: string): HookResp => ({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: reason,
+    },
+  });
+
   // ==================== PreToolUse hook ====================
   app.post('/hook', async (req, res) => {
     const parsed = HookPayloadSchema.safeParse(req.body);
@@ -102,7 +130,7 @@ export function createHttpServer(port: number = 7749): express.Application {
       log.warn(`YOLO AUTO-ALLOW: ${tool_name}${filePath ? ` → ${filePath}` : ''}`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'yolo', decision: 'auto_allow', timestamp: ts, summary: 'yolo mode' });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'allowed', reason: 'yolo' });
-      return res.json({ decision: 'allow' });
+      return res.json(hookAllow());
     }
 
     // 0.5 Check overrides
@@ -111,13 +139,13 @@ export function createHttpServer(port: number = 7749): express.Application {
       log.warn(`BLOCKED (override): ${tool_name}`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'override', decision: 'blocked', timestamp: ts });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'blocked', reason: 'override' });
-      return res.json({ decision: 'block', reason: 'blocked by sentinel block' });
+      return res.json(hookDeny('blocked by sentinel block'));
     }
     if (overrides.allowAll) {
       log.success(`ALLOWED (override): ${tool_name}`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'override', decision: 'allowed', timestamp: ts });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'allowed', reason: 'override' });
-      return res.json({ decision: 'allow' });
+      return res.json(hookAllow());
     }
 
     if (isOverBudget()) log.warn('⚠ Over daily budget!');
@@ -127,12 +155,12 @@ export function createHttpServer(port: number = 7749): express.Application {
     if (modeResult === 'block') {
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'lockdown', decision: 'blocked', timestamp: ts });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'blocked', reason: 'lockdown' });
-      return res.json({ decision: 'block', reason: 'lockdown mode' });
+      return res.json(hookDeny('lockdown mode'));
     }
     if (modeResult === 'auto_allow') {
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'mode', decision: 'auto_allow', timestamp: ts, summary: `${getMode()} mode` });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'allowed', reason: `mode:${getMode()}` });
-      return res.json({ decision: 'allow' });
+      return res.json(hookAllow());
     }
 
     // 1. Local rules
@@ -141,7 +169,7 @@ export function createHttpServer(port: number = 7749): express.Application {
       log.success(`Auto-allow: ${tool_name} (rule: ${match.rule?.id ?? 'default'})`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'auto_allow', decision: 'auto_allow', timestamp: ts });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'allowed', reason: `auto:${match.rule?.id ?? ''}` });
-      return res.json({ decision: 'allow' });
+      return res.json(hookAllow());
     }
 
     // 2. Check transport
@@ -150,7 +178,7 @@ export function createHttpServer(port: number = 7749): express.Application {
       log.error(`${transport?.mode ?? 'no'} transport offline — blocking`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: 'offline', timestamp: ts });
       pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'blocked', reason: 'offline' });
-      return res.json({ decision: 'block', reason: 'Sentinel offline' });
+      return res.json(hookDeny('Sentinel offline'));
     }
 
     try {
@@ -169,24 +197,41 @@ export function createHttpServer(port: number = 7749): express.Application {
       });
 
       log.info(`[${transport.mode}] Waiting: ${remoteId}`);
-      const action = await pending.waitForDecision(remoteId, tool_name);
+      const result = await pending.waitForDecision(remoteId, tool_name);
+      const action = result.action;
+      const hadEdit = result.modifiedInput !== undefined;
 
-      appendLog({ id: remoteId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: action, timestamp: ts });
-      pushEvent({ time: ts, tool: tool_name, path: filePath, decision: action === 'allowed' ? 'allowed' : 'blocked', reason: action === 'allowed' ? 'manual' : action });
+      appendLog({
+        id: remoteId,
+        toolName: tool_name,
+        filePath,
+        riskLevel: riskToLevel(match.action),
+        decision: action,
+        timestamp: ts,
+        summary: hadEdit ? 'manual (edited input)' : undefined,
+      });
+      pushEvent({
+        time: ts,
+        tool: tool_name,
+        path: filePath,
+        decision: action === 'allowed' ? 'allowed' : 'blocked',
+        reason: action === 'allowed' ? (hadEdit ? 'manual+edit' : 'manual') : action,
+      });
 
       if (action === 'allowed') {
-        log.success(`Allowed: ${tool_name} (${remoteId})`);
-        sendTerminalLine(`✅ ${tool_name}${filePath ? ` → ${filePath}` : ''} — allowed`);
-        return res.json({ decision: 'allow' });
+        const suffix = hadEdit ? ' — allowed (edited)' : ' — allowed';
+        log.success(`Allowed: ${tool_name} (${remoteId})${hadEdit ? ' [edited input]' : ''}`);
+        sendTerminalLine(`✅ ${tool_name}${filePath ? ` → ${filePath}` : ''}${suffix}`);
+        return res.json(hookAllow(result.modifiedInput));
       } else {
         log.warn(`Blocked: ${tool_name} (${remoteId}) — ${action}`);
         sendTerminalLine(`❌ ${tool_name}${filePath ? ` → ${filePath}` : ''} — ${action}`);
-        return res.json({ decision: 'block', reason: action });
+        return res.json(hookDeny(action));
       }
     } catch (err) {
       log.error(`Hook error: ${(err as Error).message}`);
       appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: riskToLevel(match.action), decision: 'blocked', timestamp: ts });
-      return res.json({ decision: 'block', reason: 'Internal error' });
+      return res.json(hookDeny('Internal error'));
     }
   });
 

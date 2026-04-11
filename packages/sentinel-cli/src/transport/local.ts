@@ -185,9 +185,10 @@ export class LocalTransport implements Transport {
 
   private handleMessage(msg: { event: string; data: any }): void {
     if (msg.event === 'decision') {
-      const { requestId, action } = msg.data;
-      log.info(`[local] Decision: ${requestId} → ${action}`);
-      pending.resolve(requestId, action);
+      const { requestId, action, modifiedInput } = msg.data;
+      const hasEdit = modifiedInput && typeof modifiedInput === 'object';
+      log.info(`[local] Decision: ${requestId} → ${action}${hasEdit ? ' (with edited input)' : ''}`);
+      pending.resolve(requestId, action, hasEdit ? modifiedInput : undefined);
       this.decisionCb?.(requestId, action);
     } else if (msg.event === 'rules_update') {
       const rules = msg.data?.rules as Rule[] | undefined;

@@ -290,7 +290,7 @@ final class RelayService {
         }
     }
 
-    func sendDecision(requestId: String, decision: Decision) {
+    func sendDecision(requestId: String, decision: Decision, modifiedInput: [String: Any]? = nil) {
         guard let transport else {
             Task { @MainActor in
                 ErrorBus.shared.post("无法发送决策：未连接", source: "relay", recovery: "请检查连接状态")
@@ -299,7 +299,11 @@ final class RelayService {
         }
         Task {
             do {
-                try await transport.sendDecision(requestId: requestId, decision: decision)
+                try await transport.sendDecision(
+                    requestId: requestId,
+                    decision: decision,
+                    modifiedInput: modifiedInput
+                )
             } catch {
                 await MainActor.run {
                     ErrorBus.shared.post("发送决策失败：\(error.localizedDescription)", source: "relay")

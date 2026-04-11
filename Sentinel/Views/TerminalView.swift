@@ -223,16 +223,24 @@ struct TerminalView: View {
             }
 
         case .approval(let request):
-            InlineApprovalCard(request: request) { decision in
-                store.sendDecision(requestId: request.id, decision: decision)
+            InlineApprovalCard(request: request) { decision, modifiedInput in
+                store.sendDecision(
+                    requestId: request.id,
+                    decision: decision,
+                    modifiedInput: modifiedInput
+                )
             }
             .padding(.vertical, 4)
 
         case .approvalGroup(let group):
             InlineApprovalGroupCard(
                 group: group,
-                onDecision: { requestId, decision in
-                    store.sendDecision(requestId: requestId, decision: decision)
+                onDecision: { requestId, decision, modifiedInput in
+                    store.sendDecision(
+                        requestId: requestId,
+                        decision: decision,
+                        modifiedInput: modifiedInput
+                    )
                 },
                 onGroupDecision: { decision in
                     store.sendGroupDecision(group: group, decision: decision)
