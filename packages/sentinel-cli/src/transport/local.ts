@@ -4,7 +4,7 @@ import { spawn as cpSpawn } from 'child_process';
 import nacl from 'tweetnacl';
 import { encodeBase64 } from 'tweetnacl-util';
 import { Bonjour } from 'bonjour-service';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { Transport, ApprovalPayload } from './interface';
 import { pending } from '../relay/pending';
 import { log } from '../lib/logger';
@@ -96,7 +96,7 @@ export class LocalTransport implements Transport {
         }, 500);
 
         ws.on('message', (data) => {
-          this.buffer += data.toString('utf-8');
+          this.buffer += normalizeWsData(data);
           if (this.buffer.length > LocalTransport.MAX_BUFFER_SIZE) {
             log.error('[local] Buffer exceeded 1MB, dropping connection');
             this.buffer = '';
@@ -389,6 +389,20 @@ export class LocalTransport implements Transport {
   getConnectionInfo(): { ip: string; port: number } {
     return { ip: getLocalIP() ?? '0.0.0.0', port: TCP_PORT };
   }
+}
+
+/**
+ * Normalize a ws RawData payload (Buffer | ArrayBuffer | Buffer[] | string) into
+ * a single UTF-8 string. This guards against fragmented frames being delivered
+ * as an array, which would otherwise be joined with commas by toString() and
+ * corrupt the newline-delimited JSON stream.
+ */
+function normalizeWsData(data: RawData | string): string {
+  if (typeof data === 'string') return data;
+  if (Buffer.isBuffer(data)) return data.toString('utf-8');
+  if (Array.isArray(data)) return Buffer.concat(data as Buffer[]).toString('utf-8');
+  // ArrayBuffer
+  return Buffer.from(data as ArrayBuffer).toString('utf-8');
 }
 
 function getLocalIP(): string | null {
