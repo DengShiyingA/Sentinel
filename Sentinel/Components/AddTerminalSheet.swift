@@ -41,6 +41,17 @@ struct AddTerminalSheet: View {
 
     private var isEditing: Bool { existing != nil }
 
+    /// The `sentinel run` command the user should run on the Mac for this
+    /// profile. Reflects the port textfield live so the copy stays accurate
+    /// as the user types.
+    private var lanStartCommand: String {
+        let port = portText.trimmingCharacters(in: .whitespaces)
+        if port.isEmpty || port == "7750" {
+            return "sentinel run"
+        }
+        return "sentinel run --port \(port)"
+    }
+
     var body: some View {
         NavigationStack {
             Form {
@@ -71,11 +82,16 @@ struct AddTerminalSheet: View {
                                 .frame(maxWidth: 200)
                         }
                     }
+
+                    CopyableCommandRow(
+                        label: String(localized: "在 Mac 上运行"),
+                        command: lanStartCommand
+                    )
                 } header: {
                     Text(String(localized: "局域网连接"))
                 } footer: {
                     if useBonjour {
-                        Text(String(localized: "通过 mDNS 自动发现同局域网的 Mac。在 Mac 上运行：sentinel run --port \(portText.isEmpty ? "7750" : portText)"))
+                        Text(String(localized: "通过 mDNS 自动发现同局域网的 Mac。"))
                             .font(.caption)
                     } else {
                         Text(String(localized: "输入 Mac 的 IP/主机名。当 Bonjour 不可用（跨子网 / 公司网络）时使用。"))
@@ -110,10 +126,15 @@ struct AddTerminalSheet: View {
                             Label(String(localized: "扫描远程二维码"), systemImage: "qrcode.viewfinder")
                         }
                     }
+
+                    CopyableCommandRow(
+                        label: String(localized: "在 Mac 上运行"),
+                        command: "sentinel run --remote"
+                    )
                 } header: {
                     Text(String(localized: "远程访问"))
                 } footer: {
-                    Text(String(localized: "Mac 运行 sentinel run --remote 后扫码配对。出门蜂窝网络时自动走 Cloudflare Tunnel。"))
+                    Text(String(localized: "Mac 运行命令后扫码配对。出门蜂窝网络时自动走 Cloudflare Tunnel。"))
                         .font(.caption)
                 }
 
