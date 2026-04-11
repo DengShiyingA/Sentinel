@@ -134,6 +134,116 @@ final class RelayService {
         }
     }
 
+    /// Connect to a terminal profile using the hybrid strategy:
+    /// 1. If profile has LAN info (useBonjour or manual host), try that first for 5 seconds.
+    /// 2. If LAN fails / times out AND profile has a remoteUrl, fall back to remote WSS.
+    /// 3. If both fail, surface connectionError.
+    func connectHybrid(profile: TerminalProfile) {
+        // Cancel any pending connect
+        connectTask?.cancel()
+        connectTask = nil
+
+        // Tear down existing transport — clear callbacks first to prevent stale events
+        let oldTransport = transport
+        oldTransport?.onRequest = nil
+        oldTransport?.onActivity = nil
+        oldTransport?.onDecisionSync = nil
+        oldTransport?.onTerminal = nil
+        oldTransport?.onWorkspaceInfo = nil
+        oldTransport?.onModel = nil
+        oldTransport?.onBrowseResult = nil
+        oldTransport?.disconnect()
+        transport = nil
+        isConnected = false
+        connectionError = nil
+        currentMode = .local
+        ConnectionMode.current = .local
+
+        // Build a new LocalTransport wrapping the local discovery service
+        let newTransport = LocalTransport(discovery: local)
+        newTransport.onRequest = onRequest
+        newTransport.onActivity = onActivity
+        newTransport.onDecisionSync = onDecisionSync
+        newTransport.onTerminal = onTerminal
+        newTransport.onWorkspaceInfo = onWorkspaceInfo
+        newTransport.onModel = onModel
+        newTransport.onBrowseResult = onBrowseResult
+        transport = newTransport
+
+        connectTask = Task { [weak self] in
+            guard let self else { return }
+
+            // Phase 1: LAN attempt
+            var lanTried = false
+            if profile.useBonjour || !profile.host.isEmpty {
+                lanTried = true
+                await MainActor.run {
+                    if profile.useBonjour {
+                        self.local.startDiscovery()
+                    } else {
+                        let port = UInt16(profile.port)
+                        self.local.connect(host: profile.host, port: port)
+                    }
+                }
+
+                // Wait up to 5 seconds for LAN to connect
+                for _ in 0..<50 {
+                    if Task.isCancelled { return }
+                    if self.local.isConnected {
+                        await MainActor.run {
+                            self.isConnected = true
+                            self.connectionError = nil
+                            self.startHeartbeat()
+                        }
+                        log.info("Hybrid: connected via LAN")
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+
+                // LAN timed out — tear it down before trying remote
+                await MainActor.run {
+                    self.local.stopDiscovery()
+                    self.local.disconnect()
+                }
+                log.warning("Hybrid: LAN attempt timed out")
+            }
+
+            // Phase 2: Remote fallback
+            if let remoteUrl = profile.remoteUrl {
+                await MainActor.run {
+                    self.connectionError = lanTried
+                        ? String(localized: "局域网未发现，正在尝试远程连接…")
+                        : nil
+                    self.local.connectRemote(url: remoteUrl, publicKey: profile.remotePublicKey)
+                }
+
+                for _ in 0..<50 {
+                    if Task.isCancelled { return }
+                    if self.local.isConnected {
+                        await MainActor.run {
+                            self.isConnected = true
+                            self.connectionError = nil
+                            self.startHeartbeat()
+                        }
+                        log.info("Hybrid: connected via remote WSS")
+                        return
+                    }
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+            }
+
+            // Both failed (or remote not configured)
+            if Task.isCancelled { return }
+            await MainActor.run {
+                self.connectionError = profile.hasRemote
+                    ? String(localized: "无法连接终端（LAN 和远程均失败）")
+                    : String(localized: "无法在局域网发现终端")
+            }
+            log.error("Hybrid: all connection attempts failed")
+        }
+    }
+
     func disconnect() {
         connectTask?.cancel()
         heartbeatTask?.cancel()

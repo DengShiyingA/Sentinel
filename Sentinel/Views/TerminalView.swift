@@ -17,6 +17,12 @@ struct TerminalView: View {
         VStack(spacing: 0) {
                 if let path = store.workspacePath, relay.isConnected {
                     HStack(spacing: 6) {
+                        if let host = relay.discoveredHost {
+                            let isRemote = host.contains("trycloudflare") || host.contains("cfargotunnel")
+                            Image(systemName: isRemote ? "globe" : "wifi")
+                                .font(.caption2)
+                                .foregroundStyle(isRemote ? .blue : .green)
+                        }
                         Button {
                             showFileBrowser = true
                         } label: {
