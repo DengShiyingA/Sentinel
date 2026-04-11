@@ -73,20 +73,26 @@ export async function bootstrapSentinel(opts: BootstrapOpts): Promise<() => void
   if (remote) {
     try {
       const { startTunnel, stopTunnel } = require('../lib/tunnel');
-      log.info('Starting Cloudflare Tunnel...');
-      const tunnelUrl = await startTunnel(7750);
-      const remoteAddr = tunnelUrl.replace(/https?:\/\//, '');
-      log.success(`Remote: ${tunnelUrl}`);
-      try {
-        const qrcode = require('qrcode-terminal');
-        const qrData = `sentinel-remote://${remoteAddr}`;
-        console.log('');
-        log.info('Scan QR code for remote access:');
-        qrcode.generate(qrData, { small: true }, (code: string) => { console.log(code); });
-      } catch {}
+      const { getTransportKeyBase64 } = require('../crypto/transport-encryption');
+
+      log.info('Starting Cloudflare Tunnel for port 7750...');
+      const tunnelUrl: string = await startTunnel(7750);
+      const tunnelHost = tunnelUrl.replace(/^https?:\/\//, '');
+      const pubKey = getTransportKeyBase64();
+      const qrData = `sentinel-remote://${tunnelHost}#key=${encodeURIComponent(pubKey)}`;
+
+      console.log('');
+      log.success(`远程地址：${tunnelUrl}`);
+      log.info('iPhone 端选择"添加远程终端"扫描下方二维码：');
+      console.log('');
+
+      const qrcode = require('qrcode-terminal');
+      qrcode.generate(qrData, { small: true }, (code: string) => { console.log(code); });
+
       cleanupFns.push(stopTunnel);
     } catch (err) {
       log.error(`Tunnel failed: ${(err as Error).message}`);
+      log.warn('继续以 LAN-only 模式运行');
     }
   }
 
