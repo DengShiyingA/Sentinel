@@ -28,14 +28,20 @@ final class ApprovalLiveActivity {
 
     /// Start a Live Activity for the given approval request.
     /// Silently no-ops if Live Activities are disabled or if an activity
-    /// for this request is already running (defensive guard against double-start).
+    /// for this request is already running (defensive guard against double-start,
+    /// including the case where the app was relaunched while an activity was live).
     func start(for request: ApprovalRequest, summary: String) {
         guard isAvailable else {
             log.info("Live Activities disabled by user — skipping start")
             return
         }
 
-        guard activeActivities[request.id] == nil else {
+        // Double-start guard: check both the in-memory dict AND the OS-level
+        // activity list (the dict is wiped on app relaunch but the activity
+        // itself may survive).
+        if activeActivities[request.id] != nil ||
+            Activity<ApprovalActivityAttributes>.activities
+                .contains(where: { $0.attributes.requestId == request.id }) {
             log.info("Activity already exists for \(request.id) — skipping")
             return
         }
@@ -72,17 +78,18 @@ final class ApprovalLiveActivity {
 
     /// End the Live Activity associated with the given request.
     /// Updates the final ContentState so the lock-screen UI shows the outcome
-    /// briefly before iOS removes it.
+    /// briefly before iOS removes it. Looks up the activity by its attributes
+    /// `requestId` so it also works after an app relaunch (when the in-memory
+    /// `activeActivities` dict has been wiped but the OS still has the activity).
     func end(requestId: String, phase: ApprovalActivityAttributes.ContentState.Phase) {
         Task { @MainActor in
-            guard let activityId = activeActivities[requestId] else {
-                log.debug("No active activity for \(requestId)")
-                return
-            }
+            // Match by attributes.requestId, not the local dict — survives app relaunch.
+            let activity = Activity<ApprovalActivityAttributes>.activities
+                .first(where: { $0.attributes.requestId == requestId })
 
-            guard let activity = Activity<ApprovalActivityAttributes>.activities
-                .first(where: { $0.id == activityId }) else {
+            guard let activity else {
                 activeActivities.removeValue(forKey: requestId)
+                log.debug("No active activity for \(requestId)")
                 return
             }
 

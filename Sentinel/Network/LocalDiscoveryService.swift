@@ -289,9 +289,11 @@ final class LocalDiscoveryService {
                             log.error("Buffer exceeded \(Self.maxBufferSize) bytes, dropping connection")
                             self.buffer = Data()
                             self.webSocket?.cancel(with: .goingAway, reason: nil)
-                            ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
-                                                 recovery: String(localized: "将自动重连"))
-                            Task { @MainActor in self.isConnected = false }
+                            Task { @MainActor in
+                                ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
+                                                     recovery: String(localized: "将自动重连"))
+                                self.isConnected = false
+                            }
                             self.scheduleReconnect()
                             return
                         }
@@ -303,9 +305,11 @@ final class LocalDiscoveryService {
                         log.error("Buffer exceeded \(Self.maxBufferSize) bytes, dropping connection")
                         self.buffer = Data()
                         self.webSocket?.cancel(with: .goingAway, reason: nil)
-                        ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
-                                             recovery: String(localized: "将自动重连"))
-                        Task { @MainActor in self.isConnected = false }
+                        Task { @MainActor in
+                            ErrorBus.shared.post(String(localized: "数据缓冲区溢出，连接已断开"),
+                                                 recovery: String(localized: "将自动重连"))
+                            self.isConnected = false
+                        }
                         self.scheduleReconnect()
                         return
                     }

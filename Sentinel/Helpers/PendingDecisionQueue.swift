@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-private let log = Logger(subsystem: "com.sentinel.ios", category: "PendingDecisionQueue")
+private nonisolated let log = Logger(subsystem: "com.sentinel.ios", category: "PendingDecisionQueue")
 
 /// Shared queue (App Group UserDefaults) for decisions triggered by LiveActivity AppIntents.
 ///
@@ -15,18 +15,19 @@ private let log = Logger(subsystem: "com.sentinel.ios", category: "PendingDecisi
 /// the real transport.
 ///
 /// This file must be included in BOTH the Sentinel target AND the widget
-/// extension target.
+/// extension target. Everything is `nonisolated` so AppIntents running in
+/// the widget extension's non-MainActor context can call them directly.
 public enum PendingDecisionQueue {
-    public static let appGroupId = "group.com.sentinel.ios"
-    public static let userDefaultsKey = "sentinel.pendingDecisions"
-    public static let darwinNotificationName = "com.sentinel.decision-queued"
+    public nonisolated static let appGroupId = "group.com.sentinel.ios"
+    public nonisolated static let userDefaultsKey = "sentinel.pendingDecisions"
+    public nonisolated static let darwinNotificationName = "com.sentinel.decision-queued"
 
-    public struct Entry: Codable, Hashable {
+    public struct Entry: Codable, Hashable, Sendable {
         public let requestId: String
         public let decision: String // "allowed" | "blocked"
         public let queuedAt: Date
 
-        public init(requestId: String, decision: String, queuedAt: Date = Date()) {
+        public nonisolated init(requestId: String, decision: String, queuedAt: Date = Date()) {
             self.requestId = requestId
             self.decision = decision
             self.queuedAt = queuedAt
@@ -35,7 +36,7 @@ public enum PendingDecisionQueue {
 
     /// Append a pending decision to the shared queue.
     /// Called from AppIntent code running in either process.
-    public static func enqueue(_ entry: Entry) {
+    public nonisolated static func enqueue(_ entry: Entry) {
         guard let defaults = UserDefaults(suiteName: appGroupId) else {
             log.error("App group \(appGroupId) unavailable")
             return
@@ -49,14 +50,14 @@ public enum PendingDecisionQueue {
     }
 
     /// Drain the queue, returning all pending entries and clearing storage.
-    public static func drain() -> [Entry] {
+    public nonisolated static func drain() -> [Entry] {
         guard let defaults = UserDefaults(suiteName: appGroupId) else { return [] }
         let entries = readQueue(defaults: defaults)
         defaults.removeObject(forKey: userDefaultsKey)
         return entries
     }
 
-    private static func readQueue(defaults: UserDefaults) -> [Entry] {
+    private nonisolated static func readQueue(defaults: UserDefaults) -> [Entry] {
         guard let data = defaults.data(forKey: userDefaultsKey),
               let queue = try? JSONDecoder().decode([Entry].self, from: data) else {
             return []
@@ -67,7 +68,7 @@ public enum PendingDecisionQueue {
     // MARK: - Darwin Notification
 
     /// Post a cross-process Darwin notification so the main app's observer wakes up.
-    public static func postDarwinNotification() {
+    public nonisolated static func postDarwinNotification() {
         let name = CFNotificationName(darwinNotificationName as CFString)
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),

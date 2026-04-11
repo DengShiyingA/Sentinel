@@ -60,7 +60,8 @@ final class LocalTransport: TransportProtocol {
     private func rebindListener() {
         let onReq = onRequest
         let onAct = onActivity
-        let onSync = onDecisionSync
+        // Note: onDecisionSync is only used by CloudKit transport; LocalTransport
+        // doesn't receive decision_sync events, so we don't capture it here.
         let onTerm = onTerminal
         let onWs = onWorkspaceInfo
         let onMod = onModel

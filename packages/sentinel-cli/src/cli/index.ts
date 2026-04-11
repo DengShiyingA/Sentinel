@@ -51,6 +51,7 @@ program
   .option('-s, --server <url>', '服务器地址（server 模式必须）')
   .option('-d, --daemon', '后台运行')
   .option('-r, --remote', '远程穿透（通过 Cloudflare Tunnel）')
+  .option('--yolo', '⚠️ 危险：自动允许所有工具调用，跳过审批')
   .action(async (opts) => {
     const port = parseInt(opts.port, 10);
     const mode = parseMode(opts.mode);
@@ -59,6 +60,18 @@ program
 
     console.log(chalk.bold('\n  🛡️  Sentinel CLI\n'));
     log.info(`Mode: ${mode}`);
+
+    if (opts.yolo) {
+      const { setYolo } = await import('../lib/yolo');
+      setYolo(true);
+      console.log('');
+      console.log(chalk.red.bold('  ⚠️  YOLO MODE ENABLED ⚠️'));
+      console.log(chalk.red('  All tool calls will be auto-approved without review.'));
+      console.log(chalk.red('  Use only for tasks you fully trust.'));
+      console.log(chalk.dim('  Press Ctrl+C in the next 5 seconds to abort...'));
+      console.log('');
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
 
     const ov = getOverrideState();
     if (ov.blockAll) console.log(chalk.bgRed.white.bold('  ⛔ BLOCK ALL active  '));
