@@ -4,12 +4,21 @@ import { log } from './logger';
 
 let activeTunnel: Tunnel | null = null;
 
+const URL_TIMEOUT_MS = 30_000;
+
+// Note: caller (CLI entrypoint) is responsible for calling stopTunnel() on SIGINT.
+
 /**
  * Start a Cloudflare quick tunnel pointing at the local HTTP port.
  * Auto-downloads the cloudflared binary on first run if missing.
  * Returns the tunnel URL (https://xxx.trycloudflare.com).
  */
 export async function startTunnel(port: number): Promise<string> {
+  if (activeTunnel) {
+    log.warn('startTunnel called while another tunnel is active, stopping previous');
+    stopTunnel();
+  }
+
   // Auto-download binary if missing
   if (!existsSync(bin)) {
     log.info('cloudflared binary not found, downloading...');
@@ -22,7 +31,7 @@ export async function startTunnel(port: number): Promise<string> {
     }
   }
 
-  log.info('Starting Cloudflare Tunnel...');
+  log.info(`Starting Cloudflare Tunnel for port ${port}...`);
 
   // cloudflared v0.7.x: Tunnel.quick() spawns `cloudflared tunnel --url ...`
   // (no named tunnel required). The generic top-level `tunnel()` helper in
@@ -36,15 +45,21 @@ export async function startTunnel(port: number): Promise<string> {
 
   const url = await new Promise<string>((resolve, reject) => {
     let settled = false;
+    let timeoutHandle: NodeJS.Timeout | null = null;
 
     const cleanup = () => {
       t.off('url', onUrl);
       t.off('error', onError);
       t.off('exit', onExit);
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+        timeoutHandle = null;
+      }
     };
 
-    const onUrl = (u: string) => {
+    const onUrl = (u: unknown) => {
       if (settled) return;
+      if (typeof u !== 'string') return;
       settled = true;
       cleanup();
       resolve(u);
@@ -54,6 +69,7 @@ export async function startTunnel(port: number): Promise<string> {
       if (settled) return;
       settled = true;
       cleanup();
+      activeTunnel = null;
       reject(err);
     };
 
@@ -61,6 +77,7 @@ export async function startTunnel(port: number): Promise<string> {
       if (settled) return;
       settled = true;
       cleanup();
+      activeTunnel = null;
       reject(
         new Error(
           `cloudflared exited before producing a URL (code=${code}, signal=${signal})`,
@@ -71,6 +88,23 @@ export async function startTunnel(port: number): Promise<string> {
     t.on('url', onUrl);
     t.on('error', onError);
     t.on('exit', onExit);
+
+    timeoutHandle = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        t.stop();
+      } catch {
+        // ignore — we're already on the error path
+      }
+      activeTunnel = null;
+      reject(
+        new Error(
+          `Timed out after ${URL_TIMEOUT_MS}ms waiting for cloudflared to emit a tunnel URL`,
+        ),
+      );
+    }, URL_TIMEOUT_MS);
   });
 
   log.success(`Tunnel ready: ${url}`);
