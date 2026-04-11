@@ -40,7 +40,13 @@ export async function startTunnel(port: number): Promise<string> {
   // The resulting Tunnel is an EventEmitter wrapping a ChildProcess; the
   // trycloudflare URL arrives asynchronously via the 'url' event parsed from
   // stderr, so we wrap it in a promise.
-  const t = Tunnel.quick(`http://localhost:${port}`);
+  //
+  // Force --protocol http2: the default QUIC protocol (UDP/443) is blocked by
+  // many corporate firewalls, home VPNs, and carrier networks, causing tunnels
+  // to fail with "no recent network activity" errors. HTTP/2 runs over TCP/443
+  // which is universally reachable. Perf difference is negligible for our
+  // low-volume approval traffic.
+  const t = Tunnel.quick(`http://localhost:${port}`, { '--protocol': 'http2' });
   activeTunnel = t;
 
   const url = await new Promise<string>((resolve, reject) => {
