@@ -15,9 +15,40 @@ export interface BootstrapOpts {
   remote?: boolean;
 }
 
-/** Kill any stale process holding the given port (best-effort, silent). */
+/**
+ * Kill any stale *sentinel* process holding the given port. Other programs
+ * on the same port are left alone — we only want to recover from a previous
+ * sentinel that didn't shut down cleanly.
+ */
 function freePort(port: number): void {
-  try { execSync(`lsof -ti :${port} | xargs kill -9`, { stdio: 'ignore' }); } catch {}
+  try {
+    const pids = execSync(`lsof -ti :${port}`, { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+      .split('\n')
+      .filter((p) => p.length > 0);
+
+    for (const pid of pids) {
+      try {
+        const cmd = execSync(`ps -p ${pid} -o command=`, {
+          stdio: ['ignore', 'pipe', 'ignore'],
+        })
+          .toString()
+          .trim();
+        // Only kill if the process is a sentinel CLI
+        if (cmd.includes('sentinel') || cmd.includes('sentinel-guard')) {
+          execSync(`kill -9 ${pid}`, { stdio: 'ignore' });
+          log.info(`Killed stale sentinel process ${pid} on port ${port}`);
+        } else {
+          log.warn(`Port ${port} is held by non-sentinel process (${cmd.slice(0, 60)}) — leaving it alone`);
+        }
+      } catch {
+        // ps failed — process may have already exited
+      }
+    }
+  } catch {
+    // lsof failed — port is probably free
+  }
 }
 
 /**

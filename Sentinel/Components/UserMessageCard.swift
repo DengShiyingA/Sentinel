@@ -45,10 +45,10 @@ struct UserMessageCard: View {
 
 #Preview {
     VStack(spacing: 12) {
-        var pending = UserMessageEntry(text: "重新检查 auth 逻辑")
+        let pending = UserMessageEntry(text: "重新检查 auth 逻辑")
         UserMessageCard(entry: pending)
 
-        var sent = UserMessageEntry(text: "stop and summarize what you've done")
+        let sent = UserMessageEntry(text: "stop and summarize what you've done")
         UserMessageCard(entry: { var e = sent; e.status = .sent; return e }())
     }
     .padding()

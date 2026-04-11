@@ -29,6 +29,9 @@ final class LocalDiscoveryService {
     private var lastHost: String?
     private var lastPort: UInt16?
     private var lastScheme: String = "ws"
+    /// Set true by disconnect() so that the socket-close error fired by
+    /// the cancellation doesn't re-arm the reconnect loop.
+    private var intentionallyDisconnected: Bool = false
     private var reconnectTask: Task<Void, Never>?
     private var reconnectAttempts = 0
     private static let maxBufferSize = SentinelConfig.maxBufferSize
@@ -197,6 +200,9 @@ final class LocalDiscoveryService {
             connectionError = "Invalid URL: \(scheme)://\(host):\(port)"
             return
         }
+        // Fresh connect attempt — clear any previous "user asked to disconnect"
+        // latch so the reconnect loop can fire if the server drops us later.
+        intentionallyDisconnected = false
         log.info("Connecting WebSocket to \(url)")
 
         // Tear down any existing socket/session before creating a new one
@@ -227,6 +233,9 @@ final class LocalDiscoveryService {
     // MARK: - Auto Reconnect
 
     private func scheduleReconnect() {
+        // Belt-and-braces: don't reconnect if user explicitly disconnected
+        // even if a stale callback slipped past the failure-path guard.
+        guard !intentionallyDisconnected else { return }
         guard let host = lastHost, let port = lastPort else { return }
         guard reconnectAttempts < SentinelConfig.maxReconnectAttempts else {
             log.warning("Max reconnect attempts reached")
@@ -249,6 +258,7 @@ final class LocalDiscoveryService {
     }
 
     func disconnect() {
+        intentionallyDisconnected = true
         reconnectTask?.cancel()
         reconnectTask = nil
         webSocket?.cancel(with: .goingAway, reason: nil)
@@ -256,6 +266,8 @@ final class LocalDiscoveryService {
         urlSession?.invalidateAndCancel()
         urlSession = nil
         buffer = Data()
+        lastHost = nil
+        lastPort = nil
         // Synchronous — disconnect() is already MainActor-isolated, so state
         // updates must happen immediately. A deferred Task { @MainActor in ... }
         // causes races where isConnected is still observed as true right after
@@ -322,8 +334,13 @@ final class LocalDiscoveryService {
                 case .failure(let error):
                     log.error("WebSocket receive error: \(error.localizedDescription)")
                     self.isConnected = false
-                    self.connectionError = error.localizedDescription
-                    self.scheduleReconnect()
+                    // Only auto-reconnect if the close was unexpected.
+                    // Intentional disconnect (user switched terminals / quit)
+                    // must not trigger the reconnect loop.
+                    if !self.intentionallyDisconnected {
+                        self.connectionError = error.localizedDescription
+                        self.scheduleReconnect()
+                    }
                 }
             }
         }

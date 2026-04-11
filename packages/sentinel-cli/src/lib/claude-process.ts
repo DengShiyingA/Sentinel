@@ -59,22 +59,25 @@ function spawnClaude(args: string[]): void {
     log.info(`[claude-process] Exited with code ${code}${signal ? ` (signal ${signal})` : ''}`);
     child = null;
 
+    // Directory change takes priority — restart fresh (no --continue) in new dir.
+    // We consume BOTH flags here to avoid a stale pendingModelRestart firing on
+    // the next exit if the user rapidly changed both model and directory.
+    if (pendingCwdRestart) {
+      pendingCwdRestart = false;
+      pendingModelRestart = false;
+      if (!shuttingDown) {
+        log.info(`[claude-process] Restarting in new directory: ${spawnCwd}`);
+        spawnClaude([...initialArgs]);
+      }
+      return;
+    }
+
     // Model change triggered this exit — restart with --continue in same dir
     if (pendingModelRestart) {
       pendingModelRestart = false;
       if (!shuttingDown) {
         log.info('[claude-process] Restarting with new model...');
         spawnClaude(['--continue', ...initialArgs]);
-      }
-      return;
-    }
-
-    // Directory change triggered this exit — restart fresh (no --continue) in new dir
-    if (pendingCwdRestart) {
-      pendingCwdRestart = false;
-      if (!shuttingDown) {
-        log.info(`[claude-process] Restarting in new directory: ${spawnCwd}`);
-        spawnClaude([...initialArgs]);
       }
       return;
     }

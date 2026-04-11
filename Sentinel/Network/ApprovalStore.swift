@@ -219,8 +219,14 @@ final class ApprovalStore {
     private func handleDecisionSync(_ requestId: String) {
         Task { @MainActor in
             guard self.pendingRequests.contains(where: { $0.id == requestId }) else { return }
+            self.timeoutTasks[requestId]?.cancel()
+            self.timeoutTasks.removeValue(forKey: requestId)
             self.removeRequest(id: requestId)
             self.resolvedCount += 1
+
+            // Clean up Live Activity and notification from this device too
+            ApprovalLiveActivity.shared.end(requestId: requestId, phase: .approved)
+            NotificationService.shared.dismissApprovalNotification(requestId: requestId)
 
             // Show toast
             self.syncToast = String(localized: "已由其他设备处理")
@@ -321,6 +327,10 @@ final class ApprovalStore {
             phase: decision == .allowed ? .approved : .denied
         )
 
+        // Remove the notification so it doesn't sit in Notification Center
+        // and let the user tap a duplicate decision later.
+        NotificationService.shared.dismissApprovalNotification(requestId: requestId)
+
         Task { @MainActor in
             guard let req = self.pendingRequests.first(where: { $0.id == requestId }) else { return }
             self.decisionHistory.insert(
@@ -396,14 +406,27 @@ final class ApprovalStore {
     }
 
     /// Reset all live state when switching to a different terminal profile.
+    /// IMPORTANT: also cancels pending timeout tasks and ends any live activities
+    /// from the previous terminal. Otherwise a stale timeout would fire on the
+    /// new terminal's CLI, and lock-screen lingering activities would route taps
+    /// to the wrong backend.
     @MainActor
     func resetForNewTerminal() {
+        for (_, task) in timeoutTasks {
+            task.cancel()
+        }
+        timeoutTasks.removeAll()
+
+        // End any live activities from the previous terminal immediately
+        ApprovalLiveActivity.shared.endAll()
+
         pendingRequests.removeAll()
         activityFeed.removeAll()
         terminalLines.removeAll()
         userMessages.removeAll()
         sessionSummaries.removeAll()
         pendingSuggestions.removeAll()
+        browseResult = nil
         resolvedCount = 0
         workspacePath = nil
         workspaceHost = nil
@@ -473,6 +496,8 @@ final class ApprovalStore {
         relay.sendDecision(requestId: id, decision: .blocked)
         // End Live Activity with timeout phase
         ApprovalLiveActivity.shared.end(requestId: id, phase: .timeout)
+        // Clear the notification so it doesn't linger
+        NotificationService.shared.dismissApprovalNotification(requestId: id)
         log.info("Request expired: \(id)")
     }
 
