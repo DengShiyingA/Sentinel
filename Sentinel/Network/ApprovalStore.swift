@@ -181,8 +181,19 @@ final class ApprovalStore {
         }
         relay.onWorkspaceInfo = { [weak self] cwd, hostname in
             Task { @MainActor in
-                self?.workspacePath = cwd
-                self?.workspaceHost = hostname
+                guard let self else { return }
+                let isFirstWorkspaceInfoThisSession = self.workspacePath == nil
+                self.workspacePath = cwd
+                self.workspaceHost = hostname
+
+                // workspace_info is the first message the CLI sends after a
+                // fresh connection. Re-push our local custom rules so the
+                // CLI's in-memory iosCustomRules (wiped on restart) gets
+                // repopulated. Without this, auto-allow rules learned by the
+                // user go silent every time sentinel restarts.
+                if isFirstWorkspaceInfoThisSession {
+                    self.pushCustomRulesToMac()
+                }
             }
         }
         relay.onModel = { [weak self] modelId in
@@ -356,8 +367,22 @@ final class ApprovalStore {
                     history: self.decisionHistory,
                     dismissedPatterns: self.dismissedPatterns
                 ) {
-                    self.pendingSuggestions.append(suggestion)
-                    self.rebuildTimeline()
+                    // De-dupe: if there's already a pending suggestion with the
+                    // same patternKey, don't add a second copy.
+                    let newKey = SuggestionEngine.patternKey(
+                        toolName: suggestion.toolName,
+                        pathPattern: suggestion.pathPattern
+                    )
+                    let alreadyPending = self.pendingSuggestions.contains { existing in
+                        SuggestionEngine.patternKey(
+                            toolName: existing.toolName,
+                            pathPattern: existing.pathPattern
+                        ) == newKey
+                    }
+                    if !alreadyPending {
+                        self.pendingSuggestions.append(suggestion)
+                        self.rebuildTimeline()
+                    }
                 }
             }
         }
@@ -390,12 +415,36 @@ final class ApprovalStore {
         var rules = RulesView.loadCustomRules()
         rules.append(rule)
         RulesView.saveCustomRules(rules)
+        pushCustomRulesToMac()
 
         let key = SuggestionEngine.patternKey(toolName: suggestion.toolName, pathPattern: suggestion.pathPattern)
         dismissedPatterns.insert(key)
         pendingSuggestions.removeAll { $0.id == suggestion.id }
         rebuildTimeline()
-        log.info("Created rule from suggestion: \(suggestion.toolName) \(suggestion.pathPattern ?? "*")")
+        log.info("Created rule from suggestion: \(suggestion.toolName) \(suggestion.pathPattern ?? "*") → pushed to CLI")
+    }
+
+    /// Serialize all locally-stored custom rules into the wire format the CLI
+    /// expects and push them via the transport. Called from:
+    ///   - createRuleFromSuggestion (after user accepts a learning suggestion)
+    ///   - onWorkspaceInfo first message (repopulate CLI's in-memory store
+    ///     after a fresh connection / restart)
+    @MainActor
+    func pushCustomRulesToMac() {
+        let rules = RulesView.loadCustomRules()
+        let rulesData = rules.map { r -> [String: Any] in
+            var dict: [String: Any] = [
+                "id": r.id,
+                "risk": r.risk,
+                "priority": 0,
+                "description": r.description,
+            ]
+            if let tool = r.toolPattern { dict["toolPattern"] = tool }
+            if let path = r.pathPattern { dict["pathPattern"] = path }
+            return dict
+        }
+        relay.sendRulesUpdate(rules: rulesData)
+        log.info("Pushed \(rules.count) custom rules to CLI")
     }
 
     @MainActor
