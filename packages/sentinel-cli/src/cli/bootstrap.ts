@@ -75,7 +75,6 @@ export async function bootstrapSentinel(opts: BootstrapOpts): Promise<() => void
       const { startTunnel, stopTunnel } = require('../lib/tunnel');
       const { getTransportKeyBase64 } = require('../crypto/transport-encryption');
 
-      log.info('Starting Cloudflare Tunnel for port 7750...');
       const tunnelUrl: string = await startTunnel(7750);
       const tunnelHost = tunnelUrl.replace(/^https?:\/\//, '');
       const pubKey = getTransportKeyBase64();

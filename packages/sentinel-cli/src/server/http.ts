@@ -18,6 +18,8 @@ import { getSentinelDir } from '../crypto/keys';
 import { log } from '../lib/logger';
 import spinners from 'unicode-animations';
 import { interruptClaude, isClaudeRunning } from '../lib/claude-process';
+import { isYolo } from '../lib/yolo';
+import stripAnsi from 'strip-ansi';
 
 /** Show an animated spinner for `durationMs`, then clear the line. */
 function showSpinner(name: 'pulse' | 'helix', prefix: string, durationMs: number): void {
@@ -94,7 +96,16 @@ export function createHttpServer(port: number = 7749): express.Application {
     // Auto-start session on first hook
     if (!getCurrentSession()) startSession();
 
-    // 0. Check overrides
+    // 0. YOLO mode: auto-approve all tool calls without sending to iOS.
+    // Enabled only via `sentinel run --yolo`, never persisted.
+    if (isYolo()) {
+      log.warn(`YOLO AUTO-ALLOW: ${tool_name}${filePath ? ` → ${filePath}` : ''}`);
+      appendLog({ id: requestId, toolName: tool_name, filePath, riskLevel: 'yolo', decision: 'auto_allow', timestamp: ts, summary: 'yolo mode' });
+      pushEvent({ time: ts, tool: tool_name, path: filePath, decision: 'allowed', reason: 'yolo' });
+      return res.json({ decision: 'allow' });
+    }
+
+    // 0.5 Check overrides
     const overrides = getOverrideState();
     if (overrides.blockAll) {
       log.warn(`BLOCKED (override): ${tool_name}`);
@@ -196,13 +207,16 @@ export function createHttpServer(port: number = 7749): express.Application {
       sendActivity('tool_completed', { toolName, summary });
       pushEvent({ time: ts, type: 'tool_completed', tool: toolName, summary });
 
-      // Terminal output: send tool response to iOS terminal view
+      // Terminal output: send tool response to iOS terminal view.
+      // Strip ANSI escape codes (tool output from bash commands like `ls --color`,
+      // `npm install` etc contains color / cursor codes that render as garbage on iOS).
       const responseText = typeof body.tool_response === 'string'
         ? body.tool_response
         : JSON.stringify(body.tool_response ?? '', null, 2);
       sendTerminalLine(`[${toolName}] ${summary}`);
       if (responseText && responseText.length > 2) {
-        const lines = responseText.slice(0, 2000).split('\n');
+        const cleanText = stripAnsi(responseText);
+        const lines = cleanText.slice(0, 2000).split('\n');
         for (const line of lines) { sendTerminalLine(line); }
       }
 

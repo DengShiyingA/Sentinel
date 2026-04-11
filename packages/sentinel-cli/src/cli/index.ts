@@ -83,6 +83,7 @@ program
   .option('-m, --mode <mode>', '连接模式: local | cloudkit | server', 'local')
   .option('-r, --remote', '远程穿透（Cloudflare Tunnel）')
   .option('-p, --port <port>', 'HTTP hook 端口', '7749')
+  .option('--yolo', '⚠️ 危险：自动允许所有工具调用，跳过审批')
   .allowUnknownOption(true)
   .action(async (claudeArgs: string[], opts) => {
     const port = parseInt(opts.port, 10);
@@ -90,6 +91,18 @@ program
 
     console.log(chalk.bold('\n  🛡️  Sentinel Run\n'));
     log.info(`Mode: ${mode} | Hosting Claude Code process`);
+
+    if (opts.yolo) {
+      const { setYolo } = await import('../lib/yolo');
+      setYolo(true);
+      console.log('');
+      console.log(chalk.red.bold('  ⚠️  YOLO MODE ENABLED ⚠️'));
+      console.log(chalk.red('  All tool calls will be auto-approved without review.'));
+      console.log(chalk.red('  Use only for tasks you fully trust.'));
+      console.log(chalk.dim('  Press Ctrl+C in the next 5 seconds to abort...'));
+      console.log('');
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
 
     const cleanup = await bootstrapSentinel({ mode, port, server: opts.server, remote: opts.remote });
 

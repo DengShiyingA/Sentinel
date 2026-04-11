@@ -104,6 +104,22 @@ function spawnClaude(args: string[]): void {
         restartCount++;
       }
 
+      // Give up after 5 rapid-fire exits (prevents infinite loop when
+      // `--continue` targets a stale/missing session that always fails).
+      if (restartCount >= 5) {
+        log.error(
+          `[claude-process] Claude crashed ${restartCount} times in a row. Aborting restart loop.`,
+        );
+        log.warn('[claude-process] Run `sentinel run` again to retry with a fresh session.');
+        shuttingDown = true;
+        setTimeout(() => process.exit(1), 100);
+        return;
+      }
+
+      // After 3 fast-fail retries, assume `--continue` is broken (stale session,
+      // "No deferred tool marker" error, etc) and start fresh without it.
+      const useContinue = restartCount < 3;
+
       // Exponential backoff: 500ms, 1s, 2s, 4s... max 30s
       // restartCount is always >= 1 here so 2^(n-1) is safe
       const delay = Math.min(500 * Math.pow(2, restartCount - 1), 30_000);
@@ -113,10 +129,13 @@ function spawnClaude(args: string[]): void {
 
       setTimeout(() => {
         if (!shuttingDown) {
-          log.info('[claude-process] Restarting with --continue...');
-          // Preserve user's original args (e.g., --dangerously-skip-permissions)
-          // alongside --continue so the restarted session matches their intent
-          spawnClaude(['--continue', ...initialArgs]);
+          if (useContinue) {
+            log.info('[claude-process] Restarting with --continue...');
+            spawnClaude(['--continue', ...initialArgs]);
+          } else {
+            log.warn('[claude-process] --continue keeps failing, restarting fresh...');
+            spawnClaude([...initialArgs]);
+          }
         }
       }, delay);
     }
