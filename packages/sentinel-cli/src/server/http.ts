@@ -327,7 +327,10 @@ export function createHttpServer(port: number = 7749): express.Application {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
     terminalClients.add(res);
-    res.on('close', () => terminalClients.delete(res));
+    const cleanup = () => terminalClients.delete(res);
+    res.on('close', cleanup);
+    res.on('error', cleanup);
+    req.on('error', cleanup);
   });
 
   // ==================== SSE ====================
@@ -338,7 +341,10 @@ export function createHttpServer(port: number = 7749): express.Application {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
     sseClients.add(res);
-    res.on('close', () => sseClients.delete(res));
+    const cleanup = () => sseClients.delete(res);
+    res.on('close', cleanup);
+    res.on('error', cleanup);
+    req.on('error', cleanup);
   });
 
   // ==================== SSE Token (for CLI watch command) ====================

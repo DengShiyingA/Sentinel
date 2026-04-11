@@ -8,6 +8,7 @@ let spawnCwd: string = process.cwd();
 let restartCount = 0;
 let lastExitTime = 0;
 let currentModel: string = '';
+let initialArgs: string[] = []; // user-provided args from `sentinel run -- ...`, preserved across restarts
 
 export function isClaudeRunning(): boolean {
   return child !== null && !child.killed && child.exitCode === null;
@@ -33,6 +34,8 @@ export function startClaude(args: string[] = [], model?: string): void {
   if (model !== undefined) {
     currentModel = model;
   }
+  // Filter out --continue from initial args — that's a restart-only flag
+  initialArgs = args.filter((a) => a !== '--continue');
   spawnClaude(args);
 }
 
@@ -88,7 +91,9 @@ function spawnClaude(args: string[]): void {
       setTimeout(() => {
         if (!shuttingDown) {
           log.info('[claude-process] Restarting with --continue...');
-          spawnClaude(['--continue']);
+          // Preserve user's original args (e.g., --dangerously-skip-permissions)
+          // alongside --continue so the restarted session matches their intent
+          spawnClaude(['--continue', ...initialArgs]);
         }
       }, delay);
     }
