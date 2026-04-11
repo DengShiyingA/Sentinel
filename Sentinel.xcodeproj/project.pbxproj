@@ -256,7 +256,7 @@
 				DEVELOPMENT_TEAM = J3U747VTL3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Sentinel/Info.plist;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sentinel needs camera access to scan pairing QR codes.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sentinel uses Face ID to verify high-risk operations.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sentinel uses local network to connect to your Mac.";
@@ -292,7 +292,7 @@
 				DEVELOPMENT_TEAM = J3U747VTL3;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = Sentinel/Info.plist;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Sentinel needs camera access to scan pairing QR codes.";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Sentinel uses Face ID to verify high-risk operations.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Sentinel uses local network to connect to your Mac.";
