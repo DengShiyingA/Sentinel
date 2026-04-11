@@ -519,8 +519,33 @@ final class ApprovalStore {
         guard !entries.isEmpty else { return }
         log.info("Draining \(entries.count) queued live activity decisions")
         for entry in entries {
-            let decision: Decision = entry.decision == "allowed" ? .allowed : .blocked
-            sendDecision(requestId: entry.requestId, decision: decision)
+            switch entry.decision {
+            case "allowed":
+                sendDecision(requestId: entry.requestId, decision: .allowed)
+            case "blocked":
+                sendDecision(requestId: entry.requestId, decision: .blocked)
+            case "allow_needs_biometric":
+                // High-risk request tapped from Live Activity. The widget intent
+                // used openAppWhenRun=true to bring us to foreground. Now run the
+                // normal in-app Face ID flow before dispatching the decision.
+                guard let request = self.pendingRequests.first(where: { $0.id == entry.requestId }) else {
+                    log.warning("Biometric-needed decision for missing request \(entry.requestId)")
+                    continue
+                }
+                ApprovalHelper.handleAllow(
+                    request: request,
+                    onSuccess: { [weak self] in
+                        self?.sendDecision(requestId: entry.requestId, decision: .allowed)
+                    },
+                    onAuthStart: {},
+                    onAuthEnd: {},
+                    onError: { err in
+                        log.error("Biometric auth failed for \(entry.requestId): \(err)")
+                    }
+                )
+            default:
+                log.warning("Unknown queued decision type: \(entry.decision)")
+            }
         }
     }
 

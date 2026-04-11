@@ -50,13 +50,9 @@ struct ApprovalLiveActivityWidget: Widget {
                             .tint(.red)
                             .buttonStyle(.borderedProminent)
 
-                            Button(intent: AllowApprovalIntent(requestId: context.attributes.requestId)) {
-                                Label("允许", systemImage: "checkmark")
-                                    .font(.caption.weight(.semibold))
-                                    .frame(maxWidth: .infinity)
-                            }
-                            .tint(.green)
-                            .buttonStyle(.borderedProminent)
+                            allowButton(for: context.attributes)
+                                .font(.caption.weight(.semibold))
+                                .frame(maxWidth: .infinity)
                         }
                         .padding(.horizontal, 4)
                     } else {
@@ -75,6 +71,25 @@ struct ApprovalLiveActivityWidget: Widget {
                 Image(systemName: "shield")
                     .foregroundStyle(context.attributes.isHighRisk ? .red : .yellow)
             }
+        }
+    }
+
+    /// High-risk requests open the app (for Face ID) while normal requests
+    /// approve inline via the queue.
+    @ViewBuilder
+    private func allowButton(for attrs: ApprovalActivityAttributes) -> some View {
+        if attrs.isHighRisk {
+            Button(intent: AllowHighRiskApprovalIntent(requestId: attrs.requestId)) {
+                Label("允许 (Face ID)", systemImage: "faceid")
+            }
+            .tint(.green)
+            .buttonStyle(.borderedProminent)
+        } else {
+            Button(intent: AllowApprovalIntent(requestId: attrs.requestId)) {
+                Label("允许", systemImage: "checkmark")
+            }
+            .tint(.green)
+            .buttonStyle(.borderedProminent)
         }
     }
 
@@ -175,13 +190,25 @@ private struct LockScreenApprovalView: View {
                     .tint(.red)
                     .buttonStyle(.borderedProminent)
 
-                    Button(intent: AllowApprovalIntent(requestId: attributes.requestId)) {
-                        Label("允许", systemImage: "checkmark")
-                            .font(.footnote.weight(.semibold))
-                            .frame(maxWidth: .infinity)
+                    // High-risk requests use a variant that opens the app
+                    // so the in-app Face ID prompt gates the decision.
+                    if attributes.isHighRisk {
+                        Button(intent: AllowHighRiskApprovalIntent(requestId: attributes.requestId)) {
+                            Label("允许 (Face ID)", systemImage: "faceid")
+                                .font(.footnote.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .tint(.green)
+                        .buttonStyle(.borderedProminent)
+                    } else {
+                        Button(intent: AllowApprovalIntent(requestId: attributes.requestId)) {
+                            Label("允许", systemImage: "checkmark")
+                                .font(.footnote.weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .tint(.green)
+                        .buttonStyle(.borderedProminent)
                     }
-                    .tint(.green)
-                    .buttonStyle(.borderedProminent)
                 }
             } else {
                 HStack(spacing: 8) {
